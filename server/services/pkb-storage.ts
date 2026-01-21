@@ -163,8 +163,10 @@ export function restoreSnapshot(sessionId: string, snapshotName: string): PKB | 
 }
 
 export function addDocumentInput(sessionId: string, filename: string, type: string, sizeBytes?: number): void {
-  const pkb = loadPKB(sessionId);
-  if (!pkb) return;
+  let pkb = loadPKB(sessionId);
+  if (!pkb) {
+    pkb = initializePKB(sessionId, "b2b");
+  }
 
   if (!pkb.meta.inputs) {
     pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
