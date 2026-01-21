@@ -6,32 +6,54 @@ const GAP_SYSTEM_PROMPT = `You are an expert at identifying missing information 
 
 Your job is to analyze a Product Knowledge Base (PKB) and identify what critical information is missing or unclear.
 
-REQUIRED FIELDS BY PRODUCT TYPE:
+CRITICAL: You MUST ask questions appropriate to the product type. Do NOT ask B2B questions for B2C products!
 
-ALWAYS REQUIRED (all product types):
+=== B2C PRODUCTS (Consumer-focused) ===
+Ask about CONSUMER topics:
+- Who are the individual USERS/CONSUMERS (age groups, interests, lifestyles)?
+- What consumer problem does it solve (entertainment, convenience, savings, health)?
+- How do INDIVIDUAL USERS discover and use the product?
+- What keeps users coming back (engagement loops, rewards, social features)?
+- How is it monetized (free, freemium, subscription, in-app purchases)?
+- What makes it stand out from consumer alternatives?
+- User acquisition channels (app stores, social media, word of mouth)?
+
+DO NOT ask B2C products about: company sizes, industries, sales cycles, buyer personas, enterprise integrations, B2B deals, organizations, or workflows.
+
+=== B2B PRODUCTS (Business-focused) ===
+Ask about BUSINESS topics:
+- What types of COMPANIES/ORGANIZATIONS use it (size, industry)?
+- Who are the BUYERS vs END USERS within organizations?
+- What business problem does it solve (efficiency, revenue, compliance)?
+- What's the typical sales cycle and deal process?
+- What integrations with business tools are available?
+- What's the pricing model for businesses (per seat, enterprise tiers)?
+- ROI and business outcomes?
+
+=== HYBRID PRODUCTS ===
+Ask questions relevant to the PRIMARY mode first, then secondary mode.
+
+REQUIRED FIELDS:
+
+ALL PRODUCTS NEED:
 - Product name OR one_liner
-- Primary problem
-- Primary users (at least 1)
-- At least 2 use cases OR 5 features
-- Pricing range_notes
-- At least 2 differentiators OR alternatives list
-- not_for (at least 1 anti-persona)
+- Primary problem it solves
+- Who uses it (primary users)
+- Key use cases or features
+- Basic pricing/monetization info
+- What makes it different from alternatives
 
-B2B ADDITIONAL REQUIREMENTS:
-- Buyer personas (who makes purchase decisions)
-- Company size + industries (org_fit)
-- Integrations (even if "none")
-- Sales cycle (rough estimate)
+B2C-SPECIFIC (extensions.b2c):
+- user_segments: Different types of individual consumers
+- acquisition_channels: How users discover the product
+- engagement_hooks: What keeps users coming back
+- monetization_model: How consumers pay (or don't pay)
 
-B2C ADDITIONAL REQUIREMENTS:
-- User segments (at least 2)
-- Monetization model + range_notes
-- Retention triggers (at least 2)
-
-HYBRID REQUIREMENTS:
-- Both B2B and B2C requirements apply
-- Primary mode requirements are CRITICAL
-- Secondary mode requirements are IMPORTANT
+B2B-SPECIFIC (extensions.b2b):
+- buyer_personas: Decision makers in organizations
+- org_fit: Company sizes and industries
+- integrations: Business tool connections
+- sales_cycle: Typical deal timeline
 
 SEVERITY LEVELS:
 - critical: Absolutely essential for understanding the product
@@ -49,7 +71,8 @@ Return a JSON object with a "gaps" array. Each gap should have:
 }
 
 IMPORTANT:
-- Ask specific, actionable questions
+- STRICTLY follow product type rules - never ask B2B questions for B2C products!
+- Ask specific, actionable questions relevant to the product type
 - Prioritize by severity (critical first)
 - Don't ask about things that are already filled
 - Phrase questions in a friendly, conversational way
@@ -74,19 +97,44 @@ export async function identifyGaps(context: AgentContext): Promise<{ gaps: Gap[]
     extensions: pkb.extensions,
   }, null, 2);
 
-  const productTypeContext = context.productType === "hybrid"
-    ? `This is a HYBRID product with ${context.primaryMode?.toUpperCase() || "B2B"} as the PRIMARY focus.
-       For the primary side, requirements are CRITICAL.
-       For the secondary side, downgrade severity by one level (critical → important, important → nice_to_have).`
-    : `This is a ${context.productType.toUpperCase()} product.`;
+  let productTypeContext: string;
+  if (context.productType === "hybrid") {
+    productTypeContext = `This is a HYBRID product with ${context.primaryMode?.toUpperCase() || "B2B"} as the PRIMARY focus.
+For the primary side (${context.primaryMode?.toUpperCase() || "B2B"}), requirements are CRITICAL.
+For the secondary side, downgrade severity by one level.`;
+  } else if (context.productType === "b2c") {
+    productTypeContext = `IMPORTANT: This is a B2C (Business-to-Consumer) product that sells to INDIVIDUAL CONSUMERS, not businesses.
+
+DO NOT ask about:
+- Company sizes or industries
+- Sales cycles or B2B deals
+- Buyer personas or enterprise procurement
+- Organizational workflows or integrations
+
+Instead, ask about:
+- Individual consumer segments (who uses it personally)
+- Consumer acquisition (how users find and download/signup)
+- Engagement and retention (what brings users back)
+- Consumer monetization (subscriptions, freemium, in-app purchases)`;
+  } else {
+    productTypeContext = `This is a B2B (Business-to-Business) product that sells to COMPANIES and ORGANIZATIONS.
+
+Ask about:
+- Target company sizes and industries
+- Decision makers and end users in organizations
+- Sales cycles and enterprise deals
+- Business integrations and workflows`;
+  }
 
   const userPrompt = `${productTypeContext}
 
-Analyze the following PKB and identify missing or incomplete information:
+Analyze the following PKB and identify missing or incomplete information.
+Remember: Only ask questions appropriate for a ${context.productType.toUpperCase()} product!
 
+PKB STATE:
 ${factsSnapshot}
 
-Identify gaps following the required fields rules. Return as JSON with a "gaps" array.`;
+Identify gaps following the required fields rules for ${context.productType.toUpperCase()} products. Return as JSON with a "gaps" array.`;
 
   const response = await callLLM(GAP_SYSTEM_PROMPT, userPrompt, {
     responseFormat: "json",

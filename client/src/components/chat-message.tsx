@@ -7,6 +7,7 @@ import type { PKBChatMessage } from "@shared/schema";
 import { ProductTypeSelector } from "./product-type-selector";
 import { DocumentUpload } from "./document-upload";
 import type { ProductType, PrimaryMode } from "@shared/schema";
+import ReactMarkdown from "react-markdown";
 
 interface CrawlProgress {
   current: number;
@@ -125,10 +126,33 @@ export function ChatMessage({
               : "bg-primary text-primary-foreground"
           )}
         >
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            <p className="whitespace-pre-wrap m-0 text-sm leading-relaxed">
+          <div className={cn(
+            "prose prose-sm max-w-none",
+            isAssistant ? "dark:prose-invert" : "prose-invert"
+          )}>
+            <ReactMarkdown
+              components={{
+                p: ({ children }) => (
+                  <p className="whitespace-pre-wrap m-0 mb-2 last:mb-0 text-sm leading-relaxed">
+                    {children}
+                  </p>
+                ),
+                strong: ({ children }) => (
+                  <strong className="font-semibold">{children}</strong>
+                ),
+                ul: ({ children }) => (
+                  <ul className="list-disc list-inside my-2 space-y-1">{children}</ul>
+                ),
+                ol: ({ children }) => (
+                  <ol className="list-decimal list-inside my-2 space-y-1">{children}</ol>
+                ),
+                li: ({ children }) => (
+                  <li className="text-sm">{children}</li>
+                ),
+              }}
+            >
               {message.content}
-            </p>
+            </ReactMarkdown>
           </div>
           {renderInteractiveContent()}
         </Card>
