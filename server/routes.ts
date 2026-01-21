@@ -91,7 +91,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  app.post("/api/sessions/init", async (req: Request, res: Response) => {
+  const handleSessionInit = async (req: Request, res: Response) => {
     try {
       const parsed = sessionInitSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -102,6 +102,7 @@ export async function registerRoutes(
       }
       
       const { sessionId, productType, primaryMode } = parsed.data;
+      console.log(`Initializing PKB for session ${sessionId} with product type: ${productType}`);
       const pkb = initializePKB(sessionId, productType, primaryMode);
       
       const tips = generateOnboardingTips(productType);
@@ -117,7 +118,10 @@ export async function registerRoutes(
       console.error("Session init error:", error);
       res.status(500).json({ error: "Failed to initialize session" });
     }
-  });
+  };
+  
+  app.post("/api/sessions/init", handleSessionInit);
+  app.post("/api/sessions/set-product-type", handleSessionInit);
 
   app.get("/api/sessions/:sessionId", async (req: Request, res: Response) => {
     try {
