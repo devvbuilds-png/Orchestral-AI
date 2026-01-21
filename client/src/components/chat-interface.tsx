@@ -11,17 +11,25 @@ import { Card } from "@/components/ui/card";
 import { Loader2, RefreshCw } from "lucide-react";
 import type { Session, PKBChatMessage, ProductType, PrimaryMode, ChatMode } from "@shared/schema";
 
+interface CrawlProgress {
+  current: number;
+  total: number;
+  currentUrl: string;
+}
+
 interface ChatInterfaceProps {
   session: Session | null;
   onSendMessage: (message: string) => void;
   onProductTypeSelect: (type: ProductType, primaryMode?: PrimaryMode) => void;
   onFilesSelected: (files: File[]) => Promise<void>;
   onUrlSubmit: (url: string) => Promise<void>;
+  onCrawlWebsite?: (url: string) => Promise<void>;
   onModeChange: (mode: ChatMode) => void;
   onRecheckGaps?: () => void;
   isProcessing?: boolean;
   isStreaming?: boolean;
   streamingMessage?: string;
+  crawlProgress?: CrawlProgress | null;
   showStorytellingSummary?: boolean;
   storytellingSummary?: {
     simple_summary?: string;
@@ -39,11 +47,13 @@ export function ChatInterface({
   onProductTypeSelect,
   onFilesSelected,
   onUrlSubmit,
+  onCrawlWebsite,
   onModeChange,
   onRecheckGaps,
   isProcessing = false,
   isStreaming = false,
   streamingMessage = "",
+  crawlProgress,
   showStorytellingSummary = false,
   storytellingSummary,
   className,
@@ -135,7 +145,9 @@ export function ChatInterface({
               onProductTypeSelect={onProductTypeSelect}
               onFilesSelected={onFilesSelected}
               onUrlSubmit={onUrlSubmit}
+              onCrawlWebsite={onCrawlWebsite}
               isProcessing={isProcessing}
+              crawlProgress={crawlProgress}
             />
           ))}
 

@@ -184,8 +184,10 @@ export function addDocumentInput(sessionId: string, filename: string, type: stri
 }
 
 export function addUrlInput(sessionId: string, url: string, title?: string): void {
-  const pkb = loadPKB(sessionId);
-  if (!pkb) return;
+  let pkb = loadPKB(sessionId);
+  if (!pkb) {
+    pkb = initializePKB(sessionId, "b2b");
+  }
 
   if (!pkb.meta.inputs) {
     pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
@@ -194,11 +196,42 @@ export function addUrlInput(sessionId: string, url: string, title?: string): voi
     pkb.meta.inputs.urls = [];
   }
 
-  pkb.meta.inputs.urls.push({
-    url,
-    fetched_at: new Date().toISOString(),
-    title,
-  });
+  const existingUrl = pkb.meta.inputs.urls.find(u => u.url === url);
+  if (!existingUrl) {
+    pkb.meta.inputs.urls.push({
+      url,
+      fetched_at: new Date().toISOString(),
+      title,
+    });
+    savePKB(sessionId, pkb);
+  }
+}
+
+export function addMultipleUrlInputs(sessionId: string, urls: Array<{ url: string; title?: string }>): void {
+  let pkb = loadPKB(sessionId);
+  if (!pkb) {
+    pkb = initializePKB(sessionId, "b2b");
+  }
+
+  if (!pkb.meta.inputs) {
+    pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+  }
+  if (!pkb.meta.inputs.urls) {
+    pkb.meta.inputs.urls = [];
+  }
+
+  const existingUrls = new Set(pkb.meta.inputs.urls.map(u => u.url));
+  
+  for (const { url, title } of urls) {
+    if (!existingUrls.has(url)) {
+      pkb.meta.inputs.urls.push({
+        url,
+        fetched_at: new Date().toISOString(),
+        title,
+      });
+      existingUrls.add(url);
+    }
+  }
 
   savePKB(sessionId, pkb);
 }

@@ -8,12 +8,20 @@ import { ProductTypeSelector } from "./product-type-selector";
 import { DocumentUpload } from "./document-upload";
 import type { ProductType, PrimaryMode } from "@shared/schema";
 
+interface CrawlProgress {
+  current: number;
+  total: number;
+  currentUrl: string;
+}
+
 interface ChatMessageProps {
   message: PKBChatMessage;
   onProductTypeSelect?: (type: ProductType, primaryMode?: PrimaryMode) => void;
   onFilesSelected?: (files: File[]) => Promise<void>;
   onUrlSubmit?: (url: string) => Promise<void>;
+  onCrawlWebsite?: (url: string) => Promise<void>;
   isProcessing?: boolean;
+  crawlProgress?: CrawlProgress | null;
   className?: string;
 }
 
@@ -22,7 +30,9 @@ export function ChatMessage({
   onProductTypeSelect,
   onFilesSelected,
   onUrlSubmit,
+  onCrawlWebsite,
   isProcessing,
+  crawlProgress,
   className,
 }: ChatMessageProps) {
   const isAssistant = message.role === "assistant" || message.role === "system";
@@ -50,7 +60,9 @@ export function ChatMessage({
             <DocumentUpload 
               onFilesSelected={onFilesSelected}
               onUrlSubmit={onUrlSubmit}
+              onCrawlWebsite={onCrawlWebsite}
               isProcessing={isProcessing}
+              crawlProgress={crawlProgress}
             />
           </div>
         ) : null;

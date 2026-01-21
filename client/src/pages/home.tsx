@@ -30,6 +30,12 @@ const INITIAL_MESSAGES: Record<string, { content: string; type: PKBChatMessage["
   },
 };
 
+interface CrawlProgress {
+  current: number;
+  total: number;
+  currentUrl: string;
+}
+
 export default function Home() {
   const { toast } = useToast();
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -39,6 +45,7 @@ export default function Home() {
   const [streamingMessage, setStreamingMessage] = useState("");
   const [showStorytellingSummary, setShowStorytellingSummary] = useState(false);
   const [storytellingSummary, setStorytellingSummary] = useState<any>(null);
+  const [crawlProgress, setCrawlProgress] = useState<CrawlProgress | null>(null);
 
   useEffect(() => {
     const stored = loadSessions();
@@ -179,6 +186,91 @@ export default function Home() {
       });
     } finally {
       setIsProcessing(false);
+    }
+  }, [currentSession, updateSession, toast]);
+
+  const handleCrawlWebsite = useCallback(async (url: string) => {
+    if (!currentSession) return;
+
+    setIsProcessing(true);
+    setCrawlProgress({ current: 0, total: 1, currentUrl: url });
+    
+    try {
+      let updated = addMessageToSession(currentSession, "user", `Crawling website: ${url}`);
+      updateSession(updated);
+
+      const response = await fetch("/api/sessions/crawl-website", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          sessionId: currentSession.id, 
+          url,
+          maxPages: 30,
+          maxDepth: 3
+        }),
+      });
+
+      if (!response.ok) throw new Error("Crawl failed");
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let totalPages = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          
+          try {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.type === "progress") {
+              setCrawlProgress({
+                current: data.current,
+                total: data.total,
+                currentUrl: data.currentUrl,
+              });
+            } else if (data.type === "complete") {
+              totalPages = data.totalPages;
+            } else if (data.type === "done") {
+              break;
+            }
+          } catch (e) {
+            console.error("Failed to parse SSE data:", e);
+          }
+        }
+      }
+
+      setCrawlProgress(null);
+      
+      updated = addMessageToSession(
+        currentSession,
+        "assistant",
+        `Successfully crawled ${totalPages} pages from the website. Processing the content now...`
+      );
+      updated = updateSessionState(updated, "processing");
+      updateSession(updated);
+
+      await processDocuments();
+    } catch (error) {
+      setCrawlProgress(null);
+      toast({
+        title: "Crawl Error",
+        description: error instanceof Error ? error.message : "Failed to crawl website",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+      setCrawlProgress(null);
     }
   }, [currentSession, updateSession, toast]);
 
@@ -389,11 +481,13 @@ export default function Home() {
               onProductTypeSelect={handleProductTypeSelect}
               onFilesSelected={handleFilesSelected}
               onUrlSubmit={handleUrlSubmit}
+              onCrawlWebsite={handleCrawlWebsite}
               onModeChange={handleModeChange}
               onRecheckGaps={handleRecheckGaps}
               isProcessing={isProcessing}
               isStreaming={isStreaming}
               streamingMessage={streamingMessage}
+              crawlProgress={crawlProgress}
               showStorytellingSummary={showStorytellingSummary}
               storytellingSummary={storytellingSummary}
             />

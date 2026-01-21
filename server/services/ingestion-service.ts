@@ -46,7 +46,7 @@ export async function extractTextFromFile(filePath: string): Promise<string> {
 
 async function extractFromPDF(filePath: string): Promise<string> {
   try {
-    const pdfParse = await import("pdf-parse");
+    const pdfParse = (await import("pdf-parse")) as { default: (buffer: Buffer) => Promise<{ text: string }> };
     const dataBuffer = fs.readFileSync(filePath);
     const data = await pdfParse.default(dataBuffer);
     return data.text;
@@ -135,6 +135,172 @@ export async function fetchUrlContent(url: string): Promise<{ text: string; titl
     }
     throw new Error(`Failed to fetch URL: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
+}
+
+export interface CrawlResult {
+  pages: Array<{
+    url: string;
+    title: string;
+    text: string;
+  }>;
+  totalPages: number;
+  errors: string[];
+}
+
+export interface CrawlProgress {
+  current: number;
+  total: number;
+  currentUrl: string;
+}
+
+export async function crawlWebsite(
+  baseUrl: string,
+  options: {
+    maxPages?: number;
+    maxDepth?: number;
+    onProgress?: (progress: CrawlProgress) => void;
+  } = {}
+): Promise<CrawlResult> {
+  const { maxPages = 50, maxDepth = 3, onProgress } = options;
+  
+  const parsedBase = new URL(baseUrl);
+  const baseDomain = parsedBase.hostname;
+  const baseOrigin = parsedBase.origin;
+  
+  const visited = new Set<string>();
+  const toVisit: Array<{ url: string; depth: number }> = [{ url: baseUrl, depth: 0 }];
+  const pages: CrawlResult["pages"] = [];
+  const errors: string[] = [];
+
+  function normalizeUrl(url: string, currentUrl: string): string | null {
+    try {
+      let absoluteUrl: URL;
+      
+      if (url.startsWith("//")) {
+        absoluteUrl = new URL(`${parsedBase.protocol}${url}`);
+      } else if (url.startsWith("/")) {
+        absoluteUrl = new URL(`${baseOrigin}${url}`);
+      } else if (url.startsWith("http://") || url.startsWith("https://")) {
+        absoluteUrl = new URL(url);
+      } else if (!url.startsWith("#") && !url.startsWith("mailto:") && !url.startsWith("tel:") && !url.startsWith("javascript:")) {
+        absoluteUrl = new URL(url, currentUrl);
+      } else {
+        return null;
+      }
+
+      if (absoluteUrl.hostname !== baseDomain) {
+        return null;
+      }
+
+      absoluteUrl.hash = "";
+      
+      const skipExtensions = [".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".mp4", ".mp3", ".zip", ".doc", ".docx", ".xls", ".xlsx"];
+      const pathLower = absoluteUrl.pathname.toLowerCase();
+      if (skipExtensions.some(ext => pathLower.endsWith(ext))) {
+        return null;
+      }
+
+      return absoluteUrl.href;
+    } catch {
+      return null;
+    }
+  }
+
+  function extractLinks($: cheerio.CheerioAPI, currentUrl: string): string[] {
+    const links: string[] = [];
+    
+    $("a[href]").each((_, el) => {
+      const href = $(el).attr("href");
+      if (href) {
+        const normalized = normalizeUrl(href, currentUrl);
+        if (normalized && !visited.has(normalized)) {
+          links.push(normalized);
+        }
+      }
+    });
+
+    return Array.from(new Set(links));
+  }
+
+  while (toVisit.length > 0 && pages.length < maxPages) {
+    const { url, depth } = toVisit.shift()!;
+    
+    if (visited.has(url)) continue;
+    visited.add(url);
+
+    if (onProgress) {
+      onProgress({
+        current: pages.length + 1,
+        total: Math.min(visited.size + toVisit.length, maxPages),
+        currentUrl: url,
+      });
+    }
+
+    try {
+      const response = await axios.get(url, {
+        timeout: 15000,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; PKBBot/1.0; +https://pkb.example.com)",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+        maxContentLength: 5 * 1024 * 1024,
+        maxRedirects: 5,
+      });
+
+      const contentType = response.headers["content-type"] || "";
+      if (!contentType.includes("text/html")) {
+        continue;
+      }
+
+      const $ = cheerio.load(response.data);
+
+      if (depth < maxDepth) {
+        const links = extractLinks($, url);
+        for (const link of links) {
+          if (!visited.has(link) && !toVisit.some(item => item.url === link)) {
+            toVisit.push({ url: link, depth: depth + 1 });
+          }
+        }
+      }
+
+      $("script, style, nav, footer, header, aside, .cookie-banner, .advertisement, #comments, noscript, iframe").remove();
+
+      const title = $("title").text().trim() || 
+                    $('meta[property="og:title"]').attr("content") ||
+                    $("h1").first().text().trim() ||
+                    url;
+
+      const mainContent = $("main, article, .content, #content, .post, .page, [role='main']").first();
+      
+      let text = "";
+      if (mainContent.length) {
+        text = mainContent.text();
+      } else {
+        text = $("body").text();
+      }
+
+      text = text
+        .replace(/\s+/g, " ")
+        .replace(/\n\s*\n/g, "\n\n")
+        .trim();
+
+      if (text.length > 100) {
+        pages.push({ url, title, text });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      errors.push(`Failed to fetch ${url}: ${message}`);
+    }
+  }
+
+  return {
+    pages,
+    totalPages: pages.length,
+    errors,
+  };
 }
 
 export function cleanText(text: string): string {

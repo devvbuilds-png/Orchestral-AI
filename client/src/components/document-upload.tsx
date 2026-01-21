@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { 
   Upload, 
   FileText, 
@@ -13,7 +15,9 @@ import {
   CheckCircle2, 
   AlertCircle,
   Loader2,
-  File
+  File,
+  Globe,
+  Layers
 } from "lucide-react";
 
 interface UploadedFile {
@@ -26,23 +30,34 @@ interface UploadedFile {
   error?: string;
 }
 
+interface CrawlProgress {
+  current: number;
+  total: number;
+  currentUrl: string;
+}
+
 interface DocumentUploadProps {
   onFilesSelected: (files: File[]) => Promise<void>;
   onUrlSubmit: (url: string) => Promise<void>;
+  onCrawlWebsite?: (url: string) => Promise<void>;
   isProcessing?: boolean;
+  crawlProgress?: CrawlProgress | null;
   className?: string;
 }
 
 export function DocumentUpload({
   onFilesSelected,
   onUrlSubmit,
+  onCrawlWebsite,
   isProcessing = false,
+  crawlProgress,
   className,
 }: DocumentUploadProps) {
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [urlInput, setUrlInput] = useState("");
   const [urlLoading, setUrlLoading] = useState(false);
+  const [crawlEntireSite, setCrawlEntireSite] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const acceptedTypes = ".pdf,.doc,.docx,.txt,.md";
@@ -121,7 +136,11 @@ export function DocumentUpload({
     
     setUrlLoading(true);
     try {
-      await onUrlSubmit(urlInput.trim());
+      if (crawlEntireSite && onCrawlWebsite) {
+        await onCrawlWebsite(urlInput.trim());
+      } else {
+        await onUrlSubmit(urlInput.trim());
+      }
       setUrlInput("");
     } catch (error) {
       console.error("URL fetch error:", error);
@@ -195,31 +214,83 @@ export function DocumentUpload({
         </div>
       </Card>
 
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="url"
-            placeholder="Paste a product website URL..."
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleUrlSubmit()}
-            className="pl-10"
-            disabled={isProcessing || urlLoading}
-            data-testid="input-url"
-          />
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="url"
+              placeholder="Paste a product website URL..."
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleUrlSubmit()}
+              className="pl-10"
+              disabled={isProcessing || urlLoading}
+              data-testid="input-url"
+            />
+          </div>
+          <Button
+            onClick={handleUrlSubmit}
+            disabled={!urlInput.trim() || isProcessing || urlLoading}
+            data-testid="button-fetch-url"
+          >
+            {urlLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : crawlEntireSite ? (
+              <>
+                <Globe className="h-4 w-4 mr-1" />
+                Crawl
+              </>
+            ) : (
+              "Fetch"
+            )}
+          </Button>
         </div>
-        <Button
-          onClick={handleUrlSubmit}
-          disabled={!urlInput.trim() || isProcessing || urlLoading}
-          data-testid="button-fetch-url"
-        >
-          {urlLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            "Fetch"
-          )}
-        </Button>
+
+        {onCrawlWebsite && (
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10">
+                <Layers className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <Label htmlFor="crawl-toggle" className="text-sm font-medium cursor-pointer">
+                  Crawl entire website
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Extract content from all pages, not just the URL you enter
+                </p>
+              </div>
+            </div>
+            <Switch
+              id="crawl-toggle"
+              checked={crawlEntireSite}
+              onCheckedChange={setCrawlEntireSite}
+              disabled={isProcessing || urlLoading}
+              data-testid="switch-crawl-entire-site"
+            />
+          </div>
+        )}
+
+        {crawlProgress && (
+          <Card className="p-3 border-primary/20 bg-primary/5">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">
+                  Crawling website... ({crawlProgress.current}/{crawlProgress.total} pages)
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {crawlProgress.currentUrl}
+                </p>
+                <Progress 
+                  value={(crawlProgress.current / crawlProgress.total) * 100} 
+                  className="h-1 mt-2" 
+                />
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
 
       {uploadedFiles.length > 0 && (

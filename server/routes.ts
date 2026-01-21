@@ -16,9 +16,11 @@ import { applyProposedUpdate, batchApplyUpdates } from "./services/pkc-curator";
 import { 
   processUploadedFile, 
   fetchUrlContent, 
+  crawlWebsite,
   chunkText, 
   cleanText 
 } from "./services/ingestion-service";
+import { addMultipleUrlInputs } from "./services/pkb-storage";
 import { extractFromMultipleChunks } from "./agents/information-extractor";
 import { synthesizeProductKnowledge, formatSynthesisForChat } from "./agents/product-synthesizer";
 import { identifyGaps, formatGapsForChat } from "./agents/gap-identifier";
@@ -46,6 +48,13 @@ const chatSchema = z.object({
   sessionId: z.string().min(1),
   message: z.string().min(1),
   mode: z.enum(["learner", "explainer"]).optional(),
+});
+
+const crawlWebsiteSchema = z.object({
+  sessionId: z.string().min(1),
+  url: z.string().url(),
+  maxPages: z.number().min(1).max(100).optional().default(30),
+  maxDepth: z.number().min(1).max(5).optional().default(3),
 });
 
 const explainSchema = z.object({
@@ -190,6 +199,61 @@ export async function registerRoutes(
       console.error("URL fetch error:", error);
       res.status(500).json({ 
         error: error instanceof Error ? error.message : "Failed to fetch URL" 
+      });
+    }
+  });
+
+  app.post("/api/sessions/crawl-website", async (req: Request, res: Response) => {
+    try {
+      const parsed = crawlWebsiteSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ 
+          error: "Invalid request", 
+          details: parsed.error.errors 
+        });
+      }
+
+      const { sessionId, url, maxPages, maxDepth } = parsed.data;
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      res.write(`data: ${JSON.stringify({ type: "status", message: "Starting website crawl..." })}\n\n`);
+
+      const result = await crawlWebsite(url, {
+        maxPages,
+        maxDepth,
+        onProgress: (progress) => {
+          res.write(`data: ${JSON.stringify({ 
+            type: "progress", 
+            current: progress.current, 
+            total: progress.total,
+            currentUrl: progress.currentUrl 
+          })}\n\n`);
+        },
+      });
+
+      const urlsToAdd = result.pages.map(page => ({
+        url: page.url,
+        title: page.title,
+      }));
+      
+      addMultipleUrlInputs(sessionId, urlsToAdd);
+
+      res.write(`data: ${JSON.stringify({ 
+        type: "complete", 
+        totalPages: result.totalPages,
+        errors: result.errors.length,
+        pages: result.pages.map(p => ({ url: p.url, title: p.title }))
+      })}\n\n`);
+
+      res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
+      res.end();
+    } catch (error) {
+      console.error("Website crawl error:", error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to crawl website" 
       });
     }
   });
