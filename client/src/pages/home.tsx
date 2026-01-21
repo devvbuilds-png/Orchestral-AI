@@ -99,6 +99,16 @@ export default function Home() {
   const handleProductTypeSelect = useCallback(async (type: ProductType, primaryMode?: PrimaryMode) => {
     if (!currentSession) return;
 
+    try {
+      await apiRequest("POST", "/api/sessions/set-product-type", {
+        sessionId: currentSession.id,
+        productType: type,
+        primaryMode,
+      });
+    } catch (error) {
+      console.error("Failed to initialize PKB:", error);
+    }
+
     let updated = updateSessionProductType(currentSession, type, primaryMode);
     
     const userMessage = primaryMode 
