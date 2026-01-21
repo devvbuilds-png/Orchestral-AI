@@ -46,11 +46,24 @@ export async function extractTextFromFile(filePath: string): Promise<string> {
 
 async function extractFromPDF(filePath: string): Promise<string> {
   try {
-    const pdfParseModule = await import("pdf-parse");
-    const pdfParse = pdfParseModule.default || pdfParseModule;
+    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const dataBuffer = fs.readFileSync(filePath);
-    const data = await pdfParse(dataBuffer);
-    return data.text;
+    const uint8Array = new Uint8Array(dataBuffer);
+    
+    const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
+    const pdf = await loadingTask.promise;
+    
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: { str?: string }) => item.str || "")
+        .join(" ");
+      fullText += pageText + "\n";
+    }
+    
+    return fullText.trim();
   } catch (error) {
     console.error("PDF extraction error:", error);
     throw new Error("Failed to extract text from PDF. Make sure the file is a valid PDF.");
