@@ -1,0 +1,276 @@
+Product Knowledge Core (PKC) — Builder’s Description
+What PKC actually is (clear, non-fluffy definition)
+
+PKC is the single authority layer of the system.
+
+It is responsible for:
+
+deciding what is allowed to become “truth”
+
+deciding where that truth lives
+
+ensuring agents never corrupt or confuse knowledge
+
+providing a stable memory interface to all agents
+
+PKC is not an LLM.
+PKC is not just a database.
+PKC is a governed memory system.
+
+If every other agent disappears, PKC + PKB still preserve the product understanding.
+
+PKC = 3 tightly coupled things
+
+When you build PKC, you are building all three, not one.
+
+1️⃣ PKB (Product Knowledge Base)
+
+A structured, persistent data store (JSON / DB) that holds:
+
+facts (truth)
+
+extensions (B2B/B2C truth)
+
+derived insights (LLM synthesis)
+
+gaps (stateful diagnostics)
+
+PKB never thinks. It only stores.
+
+2️⃣ Schema + Rules Engine
+
+A deterministic layer that defines:
+
+what fields exist
+
+which fields are required (based on product type)
+
+what structure is allowed
+
+what source evidence is mandatory
+
+what can overwrite what
+
+This is what stops the system from turning into a blob of text.
+
+3️⃣ PKC Curator (the gatekeeper)
+
+A non-negotiable gate that every agent must pass through to:
+
+write to PKB
+
+update PKB
+
+overwrite PKB
+
+No agent writes to PKB directly.
+Ever.
+
+The core principle PKC enforces (memorize this)
+
+Agents may propose.
+PKC decides.
+PKB remembers.
+
+What PKC receives (inputs)
+
+PKC only accepts proposed updates, never raw conversation.
+
+A proposed update always has this shape conceptually:
+
+{
+  target_section: "facts | extensions.b2b | derived_insights | gaps",
+  field_path: "facts.pricing.range_notes",
+  value: "...",
+  sources: [...],
+  metadata: {
+    proposed_by: "extractor | interviewer | synthesizer | gap_identifier",
+    timestamp: ...
+  }
+}
+
+
+Different agents propose different kinds of updates:
+
+Agent	What it proposes
+Information Extractor	proposed fact updates
+Product Interviewer	proposed fact updates (founder source)
+Product Synthesizer	proposed derived_insights
+Gap Identifier	proposed gaps list
+Explainer	❌ never writes
+What PKC does with every proposed update (step by step)
+
+This is the exact logic PKC must implement.
+
+Step 1: Structural validation (hard stop)
+
+PKC checks:
+
+Is the target_section valid?
+
+Does the field_path exist in schema?
+
+Is the value type correct (string, list, object)?
+
+Is this section writable by this agent?
+
+If any fail → reject.
+
+Step 2: Source validation (hard stop for facts)
+
+If update is targeting:
+
+facts or extensions
+
+Then PKC enforces:
+
+at least one source exists
+
+source_type ∈ {doc, url, founder}
+
+source_ref is present
+
+No source → no truth.
+
+Derived insights and gaps do not require sources.
+
+Step 3: Authority check (soft but critical)
+
+PKC checks:
+
+Is this a fact overwrite?
+
+Does an existing fact already exist at this path?
+
+If yes:
+
+Compare old value vs new value
+
+If conflicting → mark as needs_clarification
+
+Do NOT silently overwrite
+
+This prevents:
+
+“Extractor said pricing is $99, interviewer later says $49, system blindly overwrites.”
+
+Step 4: Section-specific routing
+
+PKC decides where this update lives:
+
+Fact updates → facts or extensions
+
+Synthesizer output → derived_insights
+
+Gap output → gaps.current (overwrite previous gaps)
+
+Agents do not choose this themselves.
+
+Step 5: Write + version
+
+PKC:
+
+writes accepted update to PKB
+
+updates timestamps
+
+optionally stores previous version (even shallow versioning is enough for V0)
+
+What PKC never does (important)
+
+PKC:
+
+❌ does not summarize
+
+❌ does not reason about the product
+
+❌ does not generate text
+
+❌ does not talk to the user
+
+❌ does not infer missing info
+
+That is agent work, not PKC work.
+
+How PKC interacts with each agent
+With Information Extractor
+
+Receives: structured proposed facts
+
+Enforces: schema + sources
+
+Stores: accepted facts
+
+With Product Synthesizer
+
+Receives: derived understanding
+
+Enforces: “derived only” rule
+
+Stores: under derived_insights
+
+Synthesizer can NEVER touch facts.
+
+With Gap Identifier
+
+Receives: gap list + priorities
+
+Stores: replaces gaps.current
+
+Gaps are always treated as state, not truth.
+
+With Product Interviewer
+
+Receives: structured fact updates parsed from human answers
+
+Enforces: same rules as extractor
+
+Stores: facts with source_type = founder
+
+With Product Explainer
+
+PKC does nothing.
+
+Explainer is read-only.
+
+Why PKC exists as a concept (this is the deep reason)
+
+Without PKC:
+
+Every agent becomes half-database, half-LLM
+
+Bugs become invisible
+
+Knowledge becomes inconsistent
+
+You cannot debug “why did the system say this?”
+
+With PKC:
+
+You can inspect what is known
+
+You can inspect why it is known
+
+You can trace where each fact came from
+
+You can safely add more agents later (sales, demo, objections)
+
+PKC is what turns a clever prototype into a system.
+
+PKC in one sentence (the one you should remember)
+
+PKC is the governed memory layer that decides what the system knows, why it knows it, and prevents agents from lying to each other.
+
+When you build it, build it in this order
+
+PKB JSON structure
+
+Schema validation rules
+
+PKC curator function (accept / reject / store)
+
+Enforce “no agent writes directly to PKB”
+
+Add logging (“why was this rejected?”)
+
+Once PKC is solid, every other agent becomes easy.

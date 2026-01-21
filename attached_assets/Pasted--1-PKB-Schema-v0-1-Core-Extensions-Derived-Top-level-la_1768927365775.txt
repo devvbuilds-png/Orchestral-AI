@@ -1,0 +1,294 @@
+# 1) PKB Schema v0.1 (Core + Extensions + Derived)
+
+## Top-level layout
+
+- `meta` (what this PKB is)
+- `facts` (sourced truth)
+- `extensions` (type-specific facts)
+- `derived_insights` (synthesis + confidence)
+- `gaps` (current gap list + priority)
+
+### PKB v0.1 Skeleton
+
+```json
+{
+"meta":{
+"product_type":"b2b | b2c | hybrid",
+"version":"0.1",
+"last_updated":"ISO_DATE",
+"inputs":{
+"documents":[],
+"urls":[],
+"founder_sessions":[]a
+}
+},
+"facts":{},
+"extensions":{
+"b2b":{},
+"b2c":{}
+},
+"derived_insights":{},
+"gaps":{}
+}
+
+```
+
+---
+
+## 2) Sources per field (important)
+
+Every “fact” field is stored as an object with:
+
+- `value`
+- `sources` (list)
+- optional `confidence` (only if you want later)
+- optional `notes`
+
+### Source object format
+
+```json
+{
+"source_type":"doc | url | founder",
+"source_ref":"filename.pdf | https://... | founder_session_001",
+"evidence":"short supporting snippet (optional)",
+"captured_at":"ISO_DATE"
+}
+
+```
+
+### Fact field format
+
+```json
+{
+"value":"...",
+"sources":[{ ...},{ ...}],
+"notes":""
+}
+
+```
+
+This makes PKB auditable and trustworthy.
+
+---
+
+# 3) PKB Core Facts (always present)
+
+These exist for **all products**.
+
+## `facts.product_identity`
+
+- `name`
+- `one_liner`
+- `category` (e.g., CRM, meditation app)
+- `website`
+
+## `facts.value_proposition`
+
+- `primary_problem`
+- `top_benefits` (list)
+- `why_now` (optional)
+
+## `facts.target_users`
+
+- `primary_users` (list of persona descriptors)
+- `secondary_users` (optional)
+- `not_for` (list)
+
+## `facts.use_cases`
+
+List of use-case objects:
+
+- `name`
+- `for_user_type`
+- `problem_story`
+- `outcome`
+
+## `facts.features`
+
+List of feature objects:
+
+- `name`
+- `what_it_does`
+- `why_it_matters`
+- `dependencies` (optional)
+
+## `facts.pricing`
+
+Always accepts range/notes; tiers optional:
+
+- `model` (subscription / usage / ads / commission / one-time / hybrid)
+- `range_notes` (required)
+- `currency` (optional)
+- `tiers` (optional list)
+
+## `facts.differentiation`
+
+- `alternatives` (competitors / manual process)
+- `why_we_win` (list)
+- `where_we_lose` (optional but very useful)
+
+## `facts.proof_assets`
+
+- `case_studies` (list)
+- `testimonials` (list)
+- `metrics` (list)
+
+## `facts.constraints_assumptions`
+
+- `assumptions` (list)
+- `known_unknowns` (list)
+
+---
+
+# 4) Extensions (type-specific facts)
+
+## `extensions.b2b` (only required if product_type is b2b or hybrid)
+
+### `buyer_vs_user`
+
+- `buyers` (titles/functions)
+- `end_users`
+
+### `org_fit`
+
+- `industries`
+- `company_size` (range)
+- `regions`
+- `tech_stack_fit` (optional)
+
+### `procurement`
+
+- `sales_cycle` (days/weeks/months)
+- `security_compliance` (SOC2, ISO, GDPR, etc.)
+- `roi_driver` (time saved, cost reduced, revenue lift)
+
+### `implementation`
+
+- `integrations`
+- `onboarding_time`
+- `support_model`
+
+---
+
+## `extensions.b2c` (only required if product_type is b2c or hybrid)
+
+### `user_segments`
+
+- segment list with: `segment_name`, `who`, `why_they_care`
+
+### `monetization`
+
+- `model` (subscription / freemium / ads / IAP)
+- `range_notes`
+- `optional_tiers`
+
+### `retention_habits`
+
+- `triggers` (notifications, reminders, content)
+- `loops` (streaks, community, personalization)
+
+### `trust_safety`
+
+- risks + mitigations (optional)
+
+---
+
+# 5) Derived Insights (Synthesizer output)
+
+This is where your “thinking agent” writes.
+
+## `derived_insights.product_brief`
+
+- `simple_summary`
+- `who_its_for`
+- `why_it_wins`
+- `key_message_pillars` (list)
+- `sample_pitch` (optional)
+
+## `derived_insights.confidence`
+
+- `level`: `low | medium | high`
+- `reasons` (list)
+
+## `derived_insights.icp_hypothesis`
+
+- `b2b_icp_hypothesis` (optional)
+- `b2c_segment_hypothesis` (optional)
+
+**Rule:** Derived never edits `facts`.
+
+---
+
+# 6) Gaps (Gap Identifier output)
+
+## `gaps.current`
+
+- list of gap objects:
+    - `gap_id`
+    - `field_path` (e.g., `facts.pricing.range_notes`)
+    - `severity` (`critical|important|nice_to_have`)
+    - `question` (what to ask user)
+    - `why_needed`
+
+## `gaps.history` (optional)
+
+Track previous gap rounds.
+
+---
+
+# 7) Required-fields rules (for Gap Identifier)
+
+These rules make your schema “dynamic” without being messy.
+
+### Always required (all product types)
+
+- product name OR one_liner
+- primary problem
+- primary users
+- at least 2 use cases OR 5 features
+- pricing.range_notes
+- at least 2 differentiators OR alternatives list
+- not_for (at least 1)
+
+### If `product_type = b2b`
+
+Require:
+
+- buyer personas
+- org_fit.company_size + industries
+- implementation.integrations (even “none”)
+- procurement.sales_cycle (rough)
+
+### If `product_type = b2c`
+
+Require:
+
+- user_segments (at least 2)
+- monetization.model + range_notes
+- retention_habits.triggers (at least 2)
+
+### If `product_type = hybrid`
+
+Require:
+
+- both b2b and b2c minimum sets, but you can mark some as “important” not “critical” depending on which side is primary.
+
+---
+
+# 8) Tiny example (so it’s concrete)
+
+```json
+"facts":{
+"product_identity":{
+"name":{
+"value":"AcmeSalesAI",
+"sources":[{"source_type":"founder","source_ref":"founder_session_001","evidence":"Our product name is AcmeSalesAI","captured_at":"2026-01-20"}]
+},
+"one_liner":{
+"value":"An AI system that runs end-to-end sales workflows for small teams.",
+"sources":[{"source_type":"doc","source_ref":"pitch_deck.pdf","evidence":"...","captured_at":"2026-01-20"}]
+}
+}
+}
+
+```
