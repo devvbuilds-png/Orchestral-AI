@@ -46,9 +46,10 @@ export async function extractTextFromFile(filePath: string): Promise<string> {
 
 async function extractFromPDF(filePath: string): Promise<string> {
   try {
-    const pdfParse = (await import("pdf-parse")) as { default: (buffer: Buffer) => Promise<{ text: string }> };
+    const pdfParseModule = await import("pdf-parse");
+    const pdfParse = pdfParseModule.default || pdfParseModule;
     const dataBuffer = fs.readFileSync(filePath);
-    const data = await pdfParse.default(dataBuffer);
+    const data = await pdfParse(dataBuffer);
     return data.text;
   } catch (error) {
     console.error("PDF extraction error:", error);
