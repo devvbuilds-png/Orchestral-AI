@@ -1,0 +1,205 @@
+{
+  "meta": {
+    "session_id": "session_1768991234994_emgaocwwt",
+    "product_type": "b2b",
+    "version": "0.1",
+    "created_at": "2026-01-21T10:27:23.503Z",
+    "last_updated": "2026-01-21T10:27:59.210Z",
+    "inputs": {
+      "documents": [
+        {
+          "filename": "Spotify.pdf",
+          "type": "application/pdf",
+          "uploaded_at": "2026-01-21T10:27:23.504Z",
+          "size_bytes": 104582
+        }
+      ],
+      "urls": [],
+      "founder_sessions": []
+    }
+  },
+  "facts": {
+    "product_identity": {
+      "name": {
+        "value": "Spotify",
+        "sources": [
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 1/2)",
+            "captured_at": "2026-01-21T10:27:43.530Z",
+            "evidence": "Spotify is a multi-format audio platform centered on music, but also expanding into podcasts, audiobooks, and increasingly 'creator formats' (like video in some markets)."
+          },
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 2/2)",
+            "captured_at": "2026-01-21T10:27:59.205Z",
+            "evidence": "Analytics (Spotify as an analytics platform) Spotify is interesting because it has three distinct analytics surfaces depending on who you are:"
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "category": {
+        "value": "multi-format audio platform",
+        "sources": [
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 1/2)",
+            "captured_at": "2026-01-21T10:27:43.530Z",
+            "evidence": "Spotify is a multi-format audio platform centered on music, but also expanding into podcasts, audiobooks, and increasingly 'creator formats' (like video in some markets)."
+          },
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 2/2)",
+            "captured_at": "2026-01-21T10:27:59.205Z",
+            "evidence": "Analytics (Spotify as an analytics platform) Spotify is interesting because it has three distinct analytics surfaces depending on who you are:"
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    },
+    "features": {
+      "value": [
+        {
+          "name": "Home",
+          "what_it_does": "A personalized audio feed",
+          "why_it_matters": null
+        },
+        {
+          "name": "Search",
+          "what_it_does": "Search + discovery engine",
+          "why_it_matters": null
+        },
+        {
+          "name": "Your Library",
+          "what_it_does": "A library / collections system",
+          "why_it_matters": null
+        },
+        {
+          "name": "Player",
+          "what_it_does": "Controls, queueing, offline (Premium), and device handoff",
+          "why_it_matters": null
+        },
+        {
+          "name": "Spotify Lite (retired)",
+          "what_it_does": "Simplified Android app built to use less storage/data/battery",
+          "why_it_matters": "Aimed at low storage/data/battery devices, retired in November 2025."
+        }
+      ],
+      "sources": [
+        {
+          "source_type": "doc",
+          "source_ref": "Spotify.pdf (part 1/2)",
+          "captured_at": "2026-01-21T10:27:43.530Z",
+          "evidence": "On mobile, it’s effectively: ● A personalized audio feed (Home) ● A search + discovery engine (Search) ● A library / collections system (Your Library) ● A player with controls, queueing, offline (Premium), and device handoff On Android, Spotify also had a Spotify Lite app aimed at low storage/data/battery devices—but Spotify says it was retired across all markets in November 2025."
+        },
+        {
+          "source_type": "doc",
+          "source_ref": "Spotify.pdf (part 2/2)",
+          "captured_at": "2026-01-21T10:27:59.205Z",
+          "evidence": "Spotify explicitly offers free analytics tooling for artists, including: ● Music data : streams, saves, catalog performance ● Audience data : listener engagement + demographics insights ● Playlist data : which playlists drive streams This is important product-wise because it: ● Helps artists decide what to promote, where to tour, what songs are taking off ● Creates a “creator retention loop” (artists stay because data + distribution live together)"
+        }
+      ],
+      "quality_tag": "strong"
+    },
+    "target_users": {
+      "primary_users": {
+        "value": [
+          "Mobile users looking for instant audio listening",
+          "Users seeking lightweight usage in low-bandwidth contexts"
+        ],
+        "sources": [
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 1/2)",
+            "captured_at": "2026-01-21T10:27:43.530Z",
+            "evidence": "Primary user 'jobs' Spotify solves (mobile) 1) Instant listening (zero friction) ● Open app → press play → you get something relevant (recommendations, mixes, 'Made for you'). ● Designed for 'I don’t want to decide, just play something good.' 5) Lightweight usage in low-bandwidth contexts ● Spotify itself promotes 'Data Saver' on free tier and generally positions the product to work across networks."
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    },
+    "value_proposition": {
+      "primary_problem": {
+        "value": "Providing instant, personalized audio listening experiences",
+        "sources": [
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 1/2)",
+            "captured_at": "2026-01-21T10:27:43.530Z",
+            "evidence": "Primary user 'jobs' Spotify solves (mobile) 1) Instant listening (zero friction) ● Open app → press play → you get something relevant (recommendations, mixes, 'Made for you'). ● Designed for 'I don’t want to decide, just play something good.'"
+          },
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 2/2)",
+            "captured_at": "2026-01-21T10:27:59.205Z",
+            "evidence": "Spotify is interesting because it has three distinct analytics surfaces depending on who you are: A) Listener / consumer analytics (you as a user) Spotify gives users periodic and ongoing insights (most famously Wrapped ), and generally uses behavior signals to personalize."
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "top_benefits": {
+        "value": [
+          "Instant listening with no friction",
+          "Intent-driven listening with search and personalization",
+          "Collection and routine building via playlists, liked songs, and follows",
+          "Offline listening reliability (Premium tiers)",
+          "Lightweight usage for low-bandwidth devices"
+        ],
+        "sources": [
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 1/2)",
+            "captured_at": "2026-01-21T10:27:43.530Z",
+            "evidence": "Primary user 'jobs' Spotify solves (mobile) 1) Instant listening (zero friction) ● Open app → press play → you get something relevant (recommendations, mixes, 'Made for you'). ● Designed for 'I don’t want to decide, just play something good.' 2) Intent-driven listening ● Search for a song/artist/album/podcast → play now ● Save/like → goes into Library and improves personalization over time 3) Collection + routine building ● Playlists (create, follow, share) ● Liked Songs as a personal 'archive' ● Following artists/podcasts to influence your Home feed 4) Offline and commute reliability (Premium tiers) ● Download content for no-network environments (where supported in your plan) ● This is one of the biggest Premium conversion drivers (especially travel/metro) 5) Lightweight usage in low-bandwidth contexts ● Spotify itself promotes 'Data Saver' on free tier and generally positions the product to work across networks."
+          },
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 2/2)",
+            "captured_at": "2026-01-21T10:27:59.205Z",
+            "evidence": "Spotify explicitly offers free analytics tooling for artists, including: ● Music data : streams, saves, catalog performance ● Audience data : listener engagement + demographics insights ● Playlist data : which playlists drive streams This is important product-wise because it: ● Helps artists decide what to promote, where to tour, what songs are taking off ● Creates a “creator retention loop” (artists stay because data + distribution live together)"
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    },
+    "pricing": {
+      "model": {
+        "value": "Subscription-based",
+        "sources": [
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 1/2)",
+            "captured_at": "2026-01-21T10:27:43.530Z",
+            "evidence": "Spotify pricing is region-specific and changes over time, so think in terms of 'plan ladder' and 'price bands.'"
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "currency": {
+        "value": [
+          "₹ (Indian Rupee)",
+          "$ (US Dollar)"
+        ],
+        "sources": [
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 1/2)",
+            "captured_at": "2026-01-21T10:27:43.530Z",
+            "evidence": "India (example pricing shown on Spotify’s India pages) ● Premium Lite : ₹139/month (positioned as cheaper entry tier) US (example pricing change announced for Feb 2026) Spotify announced Premium price updates in the U.S. starting February 2026 , including: ● Individual: $12.99/month (up from $11.99)"
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    }
+  },
+  "extensions": {
+    "b2b": {},
+    "b2c": {}
+  },
+  "derived_insights": {},
+  "gaps": {
+    "current": [],
+    "history": []
+  },
+  "conflicts": []
+}

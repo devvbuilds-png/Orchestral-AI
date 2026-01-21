@@ -159,7 +159,7 @@ export default function Home() {
         updateSession(updated);
       }
 
-      await processDocuments();
+      await processDocuments(currentSession.id);
     } catch (error) {
       toast({
         title: "Upload Error",
@@ -187,7 +187,7 @@ export default function Home() {
       updated = updateSessionState(updated, "processing");
       updateSession(updated);
 
-      await processDocuments();
+      await processDocuments(currentSession.id);
     } catch (error) {
       toast({
         title: "URL Error",
@@ -270,7 +270,7 @@ export default function Home() {
       updated = updateSessionState(updated, "processing");
       updateSession(updated);
 
-      await processDocuments();
+      await processDocuments(currentSession.id);
     } catch (error) {
       setCrawlProgress(null);
       toast({
@@ -284,8 +284,9 @@ export default function Home() {
     }
   }, [currentSession, updateSession, toast]);
 
-  const processDocuments = useCallback(async () => {
-    if (!currentSession) return;
+  const processDocuments = useCallback(async (sessionId?: string) => {
+    const targetSessionId = sessionId || currentSession?.id;
+    if (!targetSessionId) return;
 
     setIsProcessing(true);
     setIsStreaming(true);
@@ -295,7 +296,7 @@ export default function Home() {
       const response = await fetch("/api/sessions/process", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: currentSession.id }),
+        body: JSON.stringify({ sessionId: targetSessionId }),
       });
 
       if (!response.ok) throw new Error("Processing failed");

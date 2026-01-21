@@ -1,0 +1,115 @@
+{
+  "meta": {
+    "session_id": "session_1768991234994_emgaocwwt",
+    "product_type": "b2b",
+    "version": "0.1",
+    "created_at": "2026-01-21T10:27:23.503Z",
+    "last_updated": "2026-01-21T10:27:59.206Z",
+    "inputs": {
+      "documents": [
+        {
+          "filename": "Spotify.pdf",
+          "type": "application/pdf",
+          "uploaded_at": "2026-01-21T10:27:23.504Z",
+          "size_bytes": 104582
+        }
+      ],
+      "urls": [],
+      "founder_sessions": []
+    }
+  },
+  "facts": {
+    "product_identity": {
+      "name": {
+        "value": "Spotify",
+        "sources": [
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 1/2)",
+            "captured_at": "2026-01-21T10:27:43.530Z",
+            "evidence": "Spotify is a multi-format audio platform centered on music, but also expanding into podcasts, audiobooks, and increasingly 'creator formats' (like video in some markets)."
+          },
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 2/2)",
+            "captured_at": "2026-01-21T10:27:59.205Z",
+            "evidence": "Analytics (Spotify as an analytics platform) Spotify is interesting because it has three distinct analytics surfaces depending on who you are:"
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "category": {
+        "value": "multi-format audio platform",
+        "sources": [
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 1/2)",
+            "captured_at": "2026-01-21T10:27:43.530Z",
+            "evidence": "Spotify is a multi-format audio platform centered on music, but also expanding into podcasts, audiobooks, and increasingly 'creator formats' (like video in some markets)."
+          },
+          {
+            "source_type": "doc",
+            "source_ref": "Spotify.pdf (part 2/2)",
+            "captured_at": "2026-01-21T10:27:59.205Z",
+            "evidence": "Analytics (Spotify as an analytics platform) Spotify is interesting because it has three distinct analytics surfaces depending on who you are:"
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    },
+    "features": {
+      "value": [
+        {
+          "name": "Home",
+          "what_it_does": "A personalized audio feed",
+          "why_it_matters": null
+        },
+        {
+          "name": "Search",
+          "what_it_does": "Search + discovery engine",
+          "why_it_matters": null
+        },
+        {
+          "name": "Your Library",
+          "what_it_does": "A library / collections system",
+          "why_it_matters": null
+        },
+        {
+          "name": "Player",
+          "what_it_does": "Controls, queueing, offline (Premium), and device handoff",
+          "why_it_matters": null
+        },
+        {
+          "name": "Spotify Lite (retired)",
+          "what_it_does": "Simplified Android app built to use less storage/data/battery",
+          "why_it_matters": "Aimed at low storage/data/battery devices, retired in November 2025."
+        }
+      ],
+      "sources": [
+        {
+          "source_type": "doc",
+          "source_ref": "Spotify.pdf (part 1/2)",
+          "captured_at": "2026-01-21T10:27:43.530Z",
+          "evidence": "On mobile, it’s effectively: ● A personalized audio feed (Home) ● A search + discovery engine (Search) ● A library / collections system (Your Library) ● A player with controls, queueing, offline (Premium), and device handoff On Android, Spotify also had a Spotify Lite app aimed at low storage/data/battery devices—but Spotify says it was retired across all markets in November 2025."
+        },
+        {
+          "source_type": "doc",
+          "source_ref": "Spotify.pdf (part 2/2)",
+          "captured_at": "2026-01-21T10:27:59.205Z",
+          "evidence": "Spotify explicitly offers free analytics tooling for artists, including: ● Music data : streams, saves, catalog performance ● Audience data : listener engagement + demographics insights ● Playlist data : which playlists drive streams This is important product-wise because it: ● Helps artists decide what to promote, where to tour, what songs are taking off ● Creates a “creator retention loop” (artists stay because data + distribution live together)"
+        }
+      ],
+      "quality_tag": "strong"
+    }
+  },
+  "extensions": {
+    "b2b": {},
+    "b2c": {}
+  },
+  "derived_insights": {},
+  "gaps": {
+    "current": [],
+    "history": []
+  },
+  "conflicts": []
+}
