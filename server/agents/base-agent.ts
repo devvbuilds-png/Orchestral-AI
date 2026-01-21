@@ -5,7 +5,7 @@ export const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-export const DEFAULT_MODEL = "gpt-5";
+export const DEFAULT_MODEL = "gpt-4o";
 
 export interface AgentContext {
   sessionId: string;
@@ -40,7 +40,11 @@ export async function callLLM(
       ...(responseFormat === "json" && { response_format: { type: "json_object" } }),
     });
 
-    return response.choices[0]?.message?.content || "";
+    const content = response.choices[0]?.message?.content || "";
+    if (!content) {
+      console.warn("LLM returned empty response, finish_reason:", response.choices[0]?.finish_reason);
+    }
+    return content;
   } catch (error) {
     console.error("LLM call failed:", error);
     throw error;

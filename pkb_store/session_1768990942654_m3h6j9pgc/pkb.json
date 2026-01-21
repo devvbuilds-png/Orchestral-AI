@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "session_id": "session_1768990942654_m3h6j9pgc",
+    "product_type": "b2b",
+    "version": "0.1",
+    "created_at": "2026-01-21T10:22:33.852Z",
+    "last_updated": "2026-01-21T10:25:22.044Z",
+    "inputs": {
+      "documents": [
+        {
+          "filename": "Spotify.pdf",
+          "type": "application/pdf",
+          "uploaded_at": "2026-01-21T10:22:33.853Z",
+          "size_bytes": 104582
+        }
+      ],
+      "urls": [],
+      "founder_sessions": []
+    }
+  },
+  "facts": {},
+  "extensions": {
+    "b2b": {},
+    "b2c": {}
+  },
+  "derived_insights": {
+    "product_brief": {
+      "simple_summary": "No product facts were provided in the PKB, so the product’s identity, features, and value proposition cannot be summarized at this time.",
+      "who_its_for": "The product is B2B, but specific industries, company sizes, buyer roles, and end-user profiles are unknown due to missing information.",
+      "why_it_wins": "Competitive advantages and differentiation cannot be assessed because there are no facts on capabilities, outcomes, integrations, pricing, or proof points.",
+      "key_message_pillars": [],
+      "sample_pitch": "Insufficient information to construct a pitch. Please provide the core value proposition, target buyers, primary use cases, and measurable outcomes."
+    },
+    "confidence": {
+      "level": "low",
+      "score": 5,
+      "reasons": [
+        "PKB contains no product facts or extensions, leaving core identity, features, value prop, and differentiation undefined.",
+        "No data on target customers, use cases, pricing, or proof points.",
+        "Unable to validate any claims or construct messaging without foundational information."
+      ]
+    },
+    "icp_hypothesis": {
+      "b2b_icp_hypothesis": "Insufficient data to form an ICP hypothesis. To develop one, please specify: target industries, firmographic attributes (company size, region, tech stack), primary buyer roles and decision-makers, key pain points, and critical workflows the product supports.",
+      "b2c_segment_hypothesis": null
+    }
+  },
+  "gaps": {
+    "current": [],
+    "history": []
+  },
+  "conflicts": []
+}
