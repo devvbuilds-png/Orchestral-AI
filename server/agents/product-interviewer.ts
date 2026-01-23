@@ -16,7 +16,8 @@ CONVERSATION STYLE:
 - Acknowledge their answers before asking more
 - Use their language and terminology
 - Keep questions focused and specific
-- Don't overwhelm with too many questions at once
+- Ask only 1-2 questions per response - NEVER more than 2
+- If you have more questions to ask, tell the user something like "I have a few more questions after this" or "Once you answer these, I have a couple more topics to cover"
 - If the user says they don't want to share something, RESPECT that and move on
 
 HANDLING REFUSALS:
@@ -75,7 +76,10 @@ Structure your response like this:
    - Key features/benefits
 3. Then transition to your questions with something like "To complete my understanding, I have a few questions..."
 
-Keep the summary portion concise (2-3 paragraphs max) and focus on the most important points.`;
+IMPORTANT RULES:
+- Ask only 1-2 questions at the end - NEVER more than 2
+- If you have more questions to cover, tell the user something like "I have a few more questions after these" or "Once you answer these, I'll have a couple more topics to explore"
+- Keep the summary portion concise (2-3 paragraphs max) and focus on the most important points.`;
 
 interface InterviewerResult {
   extracted_facts: Array<{
