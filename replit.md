@@ -62,7 +62,16 @@ The system employs specialized AI agents that work together:
 - **Environment Variables**: 
   - `AI_INTEGRATIONS_OPENAI_API_KEY`: API key for OpenAI
   - `AI_INTEGRATIONS_OPENAI_BASE_URL`: Custom base URL for Replit's AI proxy
-- **Model**: gpt-5 (configured in `server/agents/base-agent.ts`)
+- **Model**: gpt-4o (configured in `server/agents/base-agent.ts`)
+
+### Key Features
+- **Session Naming**: Users must name their product before starting a session (`session-naming-dialog.tsx`)
+- **Processing Overlay**: Shows during uploads, URL fetches, and analysis with explanatory text (`processing-overlay.tsx`)
+- **Confidence Bar**: Colored bar at top of chat showing knowledge confidence, hover-expandable (`confidence-bar.tsx`)
+- **User Refusal Handling**: Tracks declined fields, excludes from future gap questions
+- **Explainer Override**: Switch to use explainer mode before high confidence with warning (`mode-toggle.tsx`)
+- **Explainer Welcome**: Fresh chat with usage instructions when entering explainer mode
+- **Initial Summary**: AI reviews and summarizes learned information before asking questions
 
 ### Database
 - **PostgreSQL**: Database via Drizzle ORM (connection via `DATABASE_URL`)
