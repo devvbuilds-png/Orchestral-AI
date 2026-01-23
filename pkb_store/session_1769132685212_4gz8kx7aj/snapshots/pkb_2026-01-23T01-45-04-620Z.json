@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "session_id": "session_1769132685212_4gz8kx7aj",
+    "product_type": "b2c",
+    "version": "0.1",
+    "created_at": "2026-01-23T01:44:55.259Z",
+    "last_updated": "2026-01-23T01:45:04.620Z",
+    "inputs": {
+      "documents": [],
+      "urls": [
+        {
+          "url": "https://www.notion.com/help/guides/category/documentation",
+          "fetched_at": "2026-01-23T01:45:04.620Z",
+          "title": "Documentation"
+        }
+      ],
+      "founder_sessions": []
+    }
+  },
+  "facts": {},
+  "extensions": {
+    "b2b": {},
+    "b2c": {}
+  },
+  "derived_insights": {},
+  "gaps": {
+    "current": [],
+    "history": []
+  },
+  "conflicts": []
+}

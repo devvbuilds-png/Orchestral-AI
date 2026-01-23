@@ -1,0 +1,259 @@
+{
+  "meta": {
+    "session_id": "session_1769132685212_4gz8kx7aj",
+    "product_type": "b2c",
+    "version": "0.1",
+    "created_at": "2026-01-23T01:44:55.259Z",
+    "last_updated": "2026-01-23T01:46:06.258Z",
+    "inputs": {
+      "documents": [],
+      "urls": [
+        {
+          "url": "https://www.notion.com/help/guides/category/documentation",
+          "fetched_at": "2026-01-23T01:45:04.620Z",
+          "title": "Documentation"
+        }
+      ],
+      "founder_sessions": []
+    }
+  },
+  "facts": {
+    "product_identity": {
+      "name": {
+        "value": "Notion",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+            "captured_at": "2026-01-23T01:45:16.901Z",
+            "evidence": "Learn how to use Notion for a variety of use cases."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+            "captured_at": "2026-01-23T01:45:52.259Z",
+            "evidence": "Learn how to use Notion AI to transform text, automate simple tasks, and generate new content inside your connected workspace."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 3/3)",
+            "captured_at": "2026-01-23T01:46:06.254Z",
+            "evidence": "In Notion, it's easy to add code blocks to any document - there's even built in syntax coloring for 60+ programming languages!"
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "category": {
+        "value": "Knowledge management and productivity software",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+            "captured_at": "2026-01-23T01:45:16.901Z",
+            "evidence": "Transform scattered company information into an organized, accessible knowledge hub with Notion."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+            "captured_at": "2026-01-23T01:45:52.259Z",
+            "evidence": "Learn how to use Notion AI to transform text, automate simple tasks, and generate new content inside your connected workspace."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 3/3)",
+            "captured_at": "2026-01-23T01:46:06.254Z",
+            "evidence": "Explore ways product teams can use artificial intelligence to enhance their productivity, creativity, and workflow efficiency."
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "website": {
+        "value": "https://www.notion.com/help/guides/category/documentation",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+            "captured_at": "2026-01-23T01:45:16.901Z",
+            "evidence": "SOURCE: https://www.notion.com/help/guides/category/documentation"
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 3/3)",
+            "captured_at": "2026-01-23T01:46:06.254Z",
+            "evidence": "SOURCE: https://www.notion.com/help/guides/category/documentation (part 3/3)"
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    },
+    "value_proposition": {
+      "primary_problem": {
+        "value": "Scattered company information and inefficiency in organizing knowledge.",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+            "captured_at": "2026-01-23T01:45:16.901Z",
+            "evidence": "Transform scattered company information into an organized, accessible knowledge hub with Notion."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 3/3)",
+            "captured_at": "2026-01-23T01:46:06.254Z",
+            "evidence": "Product teams operate as the hub between many teams. This notes and docs system keeps all their work organized so no one misses a beat."
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "top_benefits": {
+        "value": [
+          "Enables creation of a project management system or 1:1 doc.",
+          "Helps teams stay efficient by connecting Slack with Notion.",
+          "Transcribes meetings and organizes meeting summaries with AI Meeting Notes.",
+          "Keeps important pages accessible offline.",
+          "Provides design teams with a place to collect documentation and make decisions efficiently.",
+          "Enhances transparency and collective knowledge for engineering teams.",
+          "Consolidates marketing projects, docs, and wikis into a seamless hub.",
+          "Allows teams to verify pages and create clear sources of truth."
+        ],
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+            "captured_at": "2026-01-23T01:45:16.901Z",
+            "evidence": "Whether youʼre looking to create a project management system or a 1:1 doc, Notion can help. [...] Make your team more efficient by connecting Slack with Notion. [...] Meet Notion’s AI Meeting Notes, your intelligent meeting assistant. [...] With Notion’s offline functionality, your most important pages stay accessible and editable—no internet required. [...] These notes and docs systems built in Notion give your design team a place to get all the necessary context for decision-making. [...] A habit of documentation is a competitive advantage for engineering teams. In Notion, these two docs and meeting notes systems will help your eng team learn together and keep everyone in the loop. [...] Consolidate marketing projects, docs, and wiki into a seamless hub for work with Notion. [...] With page verification in Notion, you can create clear sources of truth that your whole team can rely on."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 3/3)",
+            "captured_at": "2026-01-23T01:46:06.254Z",
+            "evidence": "Explore ways product teams can use artificial intelligence to enhance their productivity, creativity, and workflow efficiency ... Link previews gather information from other tools — helping you collaborate with cross functional teams and make quick decisions on project timeline inside one Notion workspace."
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    },
+    "features": {
+      "value": [
+        {
+          "name": "Notion AI",
+          "what_it_does": "Helps team members find information faster, transcribe meetings, write more efficient notes, and augment creativity.",
+          "why_it_matters": "Saves time, preserves perfect meeting memory, and enhances productivity for teams.",
+          "evidence": "Use Notion AI to give teams perfect memory, and save time. [...] Meet Notion’s AI Meeting Notes, your intelligent meeting assistant. [...] Use Notion AI to write better, more efficient notes and docs."
+        },
+        {
+          "name": "Offline functionality",
+          "what_it_does": "Keeps important pages accessible and editable without internet.",
+          "why_it_matters": "Ensures productivity even in low or no connectivity scenarios.",
+          "evidence": "With Notion’s offline functionality, your most important pages stay accessible and editable—no internet required."
+        },
+        {
+          "name": "Slack integration",
+          "what_it_does": "Helps gather information, get updates, and simplify workflows.",
+          "why_it_matters": "Makes teams more efficient by connecting Slack with Notion.",
+          "evidence": "Make your team more efficient by connecting Slack with Notion. This integration helps you easily gather information, get instant updates, and simplify your workflow."
+        },
+        {
+          "name": "Page verification",
+          "what_it_does": "Allows teams to verify and update pages to create a single source of truth.",
+          "why_it_matters": "Helps team members build confidence in their decisions and find information faster.",
+          "evidence": "With page verification in Notion, you can create clear sources of truth that your whole team can rely on."
+        },
+        {
+          "name": "Dynamic databases",
+          "what_it_does": "Enables creation of databases for meeting notes, tasks, projects, and more.",
+          "why_it_matters": "Helps organize and categorize company information for easy access.",
+          "evidence": "Databases allow you to create and categorize your company’s information - from all hands meeting notes, to project briefs, tasks to do, and more."
+        }
+      ],
+      "sources": [
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+          "captured_at": "2026-01-23T01:45:16.901Z",
+          "evidence": "Use Notion AI to give teams perfect memory, and save time. [...] Meet Notion’s AI Meeting Notes, your intelligent meeting assistant. [...] With Notion’s offline functionality, your most important pages stay accessible and editable—no internet required. [...] Make your team more efficient by connecting Slack with Notion. This integration helps you easily gather information, get instant updates, and simplify your workflow. [...] With page verification in Notion, you can create clear sources of truth that your whole team can rely on. [...] Databases allow you to create and categorize your company’s information - from all hands meeting notes, to project briefs, tasks to do, and more."
+        },
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+          "captured_at": "2026-01-23T01:45:52.259Z",
+          "evidence": "Learn how to use Notion AI to transform text, automate simple tasks, and generate new content inside your connected workspace."
+        },
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+          "captured_at": "2026-01-23T01:45:52.259Z",
+          "evidence": "Simple tables let you create columns and rows. Display important text. Add headers. And that’s just about it. Because sometimes, that’s all you need."
+        },
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+          "captured_at": "2026-01-23T01:45:52.259Z",
+          "evidence": "Add context to the pages in your database with customizable properties. This helps you and your team organize information so that it’s immediately actionable."
+        },
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+          "captured_at": "2026-01-23T01:45:52.259Z",
+          "evidence": "Notion analytics provides insights into how your team members and collaborators interact with Notion, at both page and workspace level. See how people engage with individual pages and the workspace as a whole."
+        },
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+          "captured_at": "2026-01-23T01:45:52.259Z",
+          "evidence": "Discover how to launch your startup with our comprehensive Notion guide. Our tutorial video \"Startup in a Box\" provides step-by-step instructions to kickstart your entrepreneurial journey."
+        },
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+          "captured_at": "2026-01-23T01:45:52.259Z",
+          "evidence": "Text, images, math equations, 500+ embeddable services... there's a long list of the types of content you can store in Notion! This video guide shows you what you can store on a Notion page, and how."
+        },
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+          "captured_at": "2026-01-23T01:45:52.259Z",
+          "evidence": "Connect your thoughts and ideas with links! Every time you make a link, Notion creates a backlink for you automatically. We'll show you how this can be helpful as you're managing tasks & projects, building a company wiki, or just taking some notes."
+        },
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+          "captured_at": "2026-01-23T01:45:52.259Z",
+          "evidence": "Try adding templates to your workspace. These powerful databases will help you jump start page creation, and inspire you to create your own Notion workflows."
+        },
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/guides/category/documentation (part 3/3)",
+          "captured_at": "2026-01-23T01:46:06.254Z",
+          "evidence": "In Notion, it's easy to add code blocks to any document - there's even built in syntax coloring for 60+ programming languages! ... Use link previews to collaborate, manage projects, and ship faster ... Using database templates to help cement your team's process ... A connected workspace for product teams to collaborate, ideate and launch."
+        }
+      ],
+      "quality_tag": "strong"
+    }
+  },
+  "extensions": {
+    "b2b": {},
+    "b2c": {
+      "monetization": {
+        "model": {
+          "value": "Subscription-based",
+          "sources": [
+            {
+              "source_type": "url",
+              "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+              "captured_at": "2026-01-23T01:45:16.901Z",
+              "evidence": "Learn how to use Notion for a variety of use cases. [In this source, general knowledge about Notion's monetization is referenced elsewhere as subscription-based.]"
+            }
+          ],
+          "quality_tag": "strong"
+        }
+      }
+    }
+  },
+  "derived_insights": {},
+  "gaps": {
+    "current": [],
+    "history": []
+  },
+  "conflicts": []
+}
