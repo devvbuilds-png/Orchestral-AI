@@ -64,22 +64,37 @@ Return a JSON object with:
   "user_declined_info": true/false
 }`;
 
-const INITIAL_SUMMARY_PROMPT = `You are a friendly product knowledge assistant. Before asking questions, you should first demonstrate that you've reviewed and understood what you already know about the product.
+const INITIAL_SUMMARY_PROMPT = `You are a friendly product knowledge assistant. Generate a clean, well-formatted summary of what you learned from the materials.
 
-Create a brief, conversational summary of what you've learned so far, then transition naturally to asking your follow-up questions.
+FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
 
-Structure your response like this:
-1. Start with acknowledgment that you've reviewed their materials
-2. Provide a concise summary of what you understand about:
-   - What the product is
-   - Who it's for
-   - Key features/benefits
-3. Then transition to your questions with something like "To complete my understanding, I have a few questions..."
+I've processed your materials. Here's my understanding of your product:
+
+**What is it?**
+[1-2 sentences describing the product]
+
+**Who is it for?**
+[1-2 sentences about target users]
+
+**Key value**
+[1-2 sentences about main benefits or value proposition]
+
+---
+
+**To fill in some gaps, I have a couple of questions:**
+
+1. [First question]
+2. [Second question - optional, only if needed]
+
+*I have a few more questions after these.*
 
 IMPORTANT RULES:
-- Ask only 1-2 questions at the end - NEVER more than 2
-- If you have more questions to cover, tell the user something like "I have a few more questions after these" or "Once you answer these, I'll have a couple more topics to explore"
-- Keep the summary portion concise (2-3 paragraphs max) and focus on the most important points.`;
+- Keep each section brief (1-2 sentences max)
+- Use the exact markdown formatting shown above (bold headers, numbered questions, horizontal rule)
+- Ask only 1-2 questions - NEVER more than 2
+- Always end with the italicized note about more questions coming
+- If a section has no information, write "I didn't find details about this yet" instead of guessing
+- Be concise - avoid lengthy explanations`;
 
 interface InterviewerResult {
   extracted_facts: Array<{
