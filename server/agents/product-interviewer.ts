@@ -1,6 +1,6 @@
 import { callLLM, streamLLM, parseJSONResponse, type AgentContext } from "./base-agent";
-import type { ProposedUpdate, Source, Gap } from "@shared/schema";
-import { loadPKB } from "../services/pkb-storage";
+import type { ProposedUpdate, Source, Gap, PKB } from "@shared/schema";
+import { loadPKB, savePKB } from "../services/pkb-storage";
 
 const INTERVIEWER_SYSTEM_PROMPT = `You are a friendly, expert product interviewer helping founders articulate their product knowledge.
 
@@ -9,6 +9,7 @@ Your role is to:
 2. Extract structured facts from founder responses
 3. Ask clarifying follow-up questions when needed
 4. Guide the founder to provide complete information
+5. RESPECT when users decline to provide information
 
 CONVERSATION STYLE:
 - Be warm and encouraging
@@ -16,6 +17,21 @@ CONVERSATION STYLE:
 - Use their language and terminology
 - Keep questions focused and specific
 - Don't overwhelm with too many questions at once
+- If the user says they don't want to share something, RESPECT that and move on
+
+HANDLING REFUSALS:
+When a user says things like:
+- "I don't want to share that"
+- "That's confidential"
+- "Skip this question"
+- "This is all I have"
+- "I can't provide that information"
+
+You MUST:
+1. Acknowledge their decision politely
+2. Mark the field as "declined" in extracted_facts
+3. Move on to other questions without pressuring
+4. Never ask about the declined topic again
 
 EXTRACTION RULES:
 When the founder provides information, extract facts for these PKB paths:
@@ -36,31 +52,49 @@ Return a JSON object with:
   "extracted_facts": [
     {
       "field_path": "the.field.path",
-      "value": "extracted value",
-      "evidence": "the relevant part of the founder's response"
+      "value": "extracted value OR 'DECLINED' if user refused",
+      "evidence": "the relevant part of the founder's response",
+      "declined": true/false
     }
   ],
   "response": "Your conversational response to the founder",
   "follow_up_needed": true/false,
-  "follow_up_question": "Optional follow-up question if needed"
+  "follow_up_question": "Optional follow-up question if needed",
+  "user_declined_info": true/false
 }`;
+
+const INITIAL_SUMMARY_PROMPT = `You are a friendly product knowledge assistant. Before asking questions, you should first demonstrate that you've reviewed and understood what you already know about the product.
+
+Create a brief, conversational summary of what you've learned so far, then transition naturally to asking your follow-up questions.
+
+Structure your response like this:
+1. Start with acknowledgment that you've reviewed their materials
+2. Provide a concise summary of what you understand about:
+   - What the product is
+   - Who it's for
+   - Key features/benefits
+3. Then transition to your questions with something like "To complete my understanding, I have a few questions..."
+
+Keep the summary portion concise (2-3 paragraphs max) and focus on the most important points.`;
 
 interface InterviewerResult {
   extracted_facts: Array<{
     field_path: string;
     value: any;
     evidence: string;
+    declined?: boolean;
   }>;
   response: string;
   follow_up_needed: boolean;
   follow_up_question?: string;
+  user_declined_info?: boolean;
 }
 
 export async function processFounderResponse(
   context: AgentContext,
   founderMessage: string,
   currentGaps: Gap[]
-): Promise<{ response: string; updates: ProposedUpdate[] }> {
+): Promise<{ response: string; updates: ProposedUpdate[]; declinedFields?: string[] }> {
   const pkb = loadPKB(context.sessionId);
   
   const gapContext = currentGaps.length > 0
@@ -71,15 +105,20 @@ export async function processFounderResponse(
     ? `This is a hybrid product (B2B and B2C) with ${context.primaryMode?.toUpperCase() || "B2B"} as primary.`
     : `This is a ${context.productType.toUpperCase()} product.`;
 
+  const declinedFieldsList = (pkb?.meta?.inputs as any)?.declined_fields || [];
+  const declinedContext = declinedFieldsList.length > 0
+    ? `\n\nPREVIOUSLY DECLINED FIELDS (do not ask about these):\n${declinedFieldsList.join("\n")}`
+    : "";
+
   const userPrompt = `${productTypeContext}
 
 CURRENT KNOWLEDGE GAPS:
-${gapContext}
+${gapContext}${declinedContext}
 
 FOUNDER'S MESSAGE:
 ${founderMessage}
 
-Extract any facts from this response and provide a conversational reply. If the response answers some gaps, extract those facts. If clarification is needed, ask a follow-up question.
+Extract any facts from this response and provide a conversational reply. If the response answers some gaps, extract those facts. If the user declines to provide information, mark it as declined. If clarification is needed, ask a follow-up question.
 
 Return as JSON.`;
 
@@ -103,10 +142,18 @@ Return as JSON.`;
     captured_at: now,
   };
 
-  const updates: ProposedUpdate[] = result.extracted_facts.map((fact) => {
+  const updates: ProposedUpdate[] = [];
+  const declinedFields: string[] = [];
+
+  for (const fact of result.extracted_facts) {
+    if (fact.declined) {
+      declinedFields.push(fact.field_path);
+      continue;
+    }
+
     const targetSection = getTargetSection(fact.field_path);
     
-    return {
+    updates.push({
       target_section: targetSection,
       field_path: fact.field_path,
       value: fact.value,
@@ -119,15 +166,25 @@ Return as JSON.`;
         timestamp: now,
         session_id: context.sessionId,
       },
-    };
-  });
+    });
+  }
+
+  if (declinedFields.length > 0 && pkb) {
+    const existingDeclined: string[] = (pkb.meta?.inputs as any)?.declined_fields || [];
+    const allDeclined = Array.from(new Set([...existingDeclined, ...declinedFields]));
+    if (!pkb.meta.inputs) {
+      pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+    }
+    (pkb.meta.inputs as any).declined_fields = allDeclined;
+    savePKB(context.sessionId, pkb);
+  }
 
   let finalResponse = result.response;
   if (result.follow_up_needed && result.follow_up_question) {
     finalResponse += `\n\n${result.follow_up_question}`;
   }
 
-  return { response: finalResponse, updates };
+  return { response: finalResponse, updates, declinedFields };
 }
 
 function getTargetSection(fieldPath: string): "facts" | "extensions.b2b" | "extensions.b2c" | "derived_insights" | "gaps" {
@@ -137,6 +194,34 @@ function getTargetSection(fieldPath: string): "facts" | "extensions.b2b" | "exte
   if (fieldPath.startsWith("derived_insights.")) return "derived_insights";
   if (fieldPath.startsWith("gaps.")) return "gaps";
   return "facts";
+}
+
+export async function generateInitialSummary(context: AgentContext, pkb: PKB): Promise<string> {
+  const pkbSnapshot = JSON.stringify({
+    product_name: pkb.meta?.product_name,
+    product_type: pkb.meta?.product_type,
+    facts: pkb.facts,
+    extensions: pkb.extensions,
+    derived_insights: pkb.derived_insights?.product_brief,
+  }, null, 2);
+
+  const productTypeContext = context.productType === "hybrid"
+    ? `This is a hybrid product (B2B and B2C) with ${context.primaryMode?.toUpperCase() || "B2B"} as primary.`
+    : `This is a ${context.productType.toUpperCase()} product.`;
+
+  const userPrompt = `${productTypeContext}
+
+I've just finished processing the initial documents/URLs for this product. Here's what I know:
+
+${pkbSnapshot}
+
+Generate a brief, friendly summary showing that I've reviewed their materials, explain what I understand about the product so far, and then naturally transition to asking follow-up questions to fill any gaps.`;
+
+  const response = await callLLM(INITIAL_SUMMARY_PROMPT, userPrompt, {
+    maxTokens: 1500,
+  });
+
+  return response;
 }
 
 export async function* streamInterviewerResponse(
@@ -158,36 +243,36 @@ export async function* streamInterviewerResponse(
 export function generateOnboardingTips(productType: "b2b" | "b2c" | "hybrid"): string {
   const baseTips = `Here are some tips for providing the best information:
 
-📄 **Documents that work great:**
-• Product documentation or specs
-• Pitch decks or presentations  
-• Marketing materials or landing pages
-• Customer case studies
-• Pricing pages or proposals
+**Documents that work great:**
+- Product documentation or specs
+- Pitch decks or presentations  
+- Marketing materials or landing pages
+- Customer case studies
+- Pricing pages or proposals
 
-🔗 **URLs to share:**
-• Your product website
-• Documentation sites
-• Blog posts about your product
+**URLs to share:**
+- Your product website
+- Documentation sites
+- Blog posts about your product
 
-💡 **When answering questions:**
-• Be specific with examples
-• Include numbers when possible (pricing, metrics, timelines)
-• Mention real customer stories if you have them`;
+**When answering questions:**
+- Be specific with examples
+- Include numbers when possible (pricing, metrics, timelines)
+- Mention real customer stories if you have them`;
 
   const b2bTips = `
 
 **For B2B products specifically:**
-• Include information about your buyers vs end users
-• Share sales cycle details and pricing tiers
-• Mention integrations and compliance certifications`;
+- Include information about your buyers vs end users
+- Share sales cycle details and pricing tiers
+- Mention integrations and compliance certifications`;
 
   const b2cTips = `
 
 **For B2C products specifically:**
-• Describe your user segments clearly
-• Share retention strategies and engagement loops
-• Include app store links or user reviews`;
+- Describe your user segments clearly
+- Share retention strategies and engagement loops
+- Include app store links or user reviews`;
 
   let tips = baseTips;
   if (productType === "b2b" || productType === "hybrid") {

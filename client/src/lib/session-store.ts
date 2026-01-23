@@ -35,10 +35,11 @@ export function generateMessageId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-export function createNewSession(): Session {
+export function createNewSession(productName?: string): Session {
   const now = new Date().toISOString();
   return {
     id: generateSessionId(),
+    product_name: productName,
     state: "product_type_selection",
     chat_mode: "learner",
     created_at: now,

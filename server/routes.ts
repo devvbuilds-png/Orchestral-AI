@@ -24,7 +24,7 @@ import { addMultipleUrlInputs } from "./services/pkb-storage";
 import { extractFromMultipleChunks } from "./agents/information-extractor";
 import { synthesizeProductKnowledge, formatSynthesisForChat } from "./agents/product-synthesizer";
 import { identifyGaps, formatGapsForChat } from "./agents/gap-identifier";
-import { processFounderResponse, generateOnboardingTips } from "./agents/product-interviewer";
+import { processFounderResponse, generateOnboardingTips, generateInitialSummary } from "./agents/product-interviewer";
 import { streamExplainProduct } from "./agents/product-explainer";
 
 import type { AgentContext, ProductType, PrimaryMode } from "@shared/schema";
@@ -60,6 +60,7 @@ const crawlWebsiteSchema = z.object({
 const explainSchema = z.object({
   sessionId: z.string().min(1),
   message: z.string().min(1),
+  overrideEnabled: z.boolean().optional().default(false),
 });
 
 const upload = multer({
@@ -337,11 +338,25 @@ export async function registerRoutes(
       const { insights, updates: synthesisUpdates } = await synthesizeProductKnowledge(context);
       batchApplyUpdates(sessionId, synthesisUpdates);
 
+      const confidenceReasons = insights.confidence?.level === "high" 
+        ? ["Comprehensive product information available", "All critical areas covered"]
+        : insights.confidence?.level === "medium"
+        ? ["Core product info available", "Some important details missing"]
+        : ["Limited information provided", "Many knowledge gaps remain"];
+
+      const confidenceImprovements = insights.confidence?.level === "high"
+        ? ["Knowledge base is comprehensive"]
+        : insights.confidence?.level === "medium"
+        ? ["Fill remaining knowledge gaps", "Add more specific details"]
+        : ["Upload product documentation", "Provide website URL", "Answer interview questions"];
+
       if (insights.confidence) {
         res.write(`data: ${JSON.stringify({ 
           type: "confidence", 
           level: insights.confidence.level,
-          score: insights.confidence.score 
+          score: insights.confidence.score,
+          reasons: confidenceReasons,
+          improvements: confidenceImprovements
         })}\n\n`);
       }
 
@@ -358,11 +373,11 @@ export async function registerRoutes(
       const { gaps, updates: gapUpdates } = await identifyGaps(context);
       batchApplyUpdates(sessionId, gapUpdates);
 
-      const synthesisMessage = formatSynthesisForChat(insights);
-      res.write(`data: ${JSON.stringify({ type: "content", data: synthesisMessage })}\n\n`);
+      const initialSummary = await generateInitialSummary(context, updatedPkb || pkb);
+      res.write(`data: ${JSON.stringify({ type: "content", data: initialSummary })}\n\n`);
 
       if (gaps.length > 0) {
-        const gapsMessage = "\n\n---\n\n" + formatGapsForChat(gaps);
+        const gapsMessage = "\n\n---\n\n" + formatGapsForChat(gaps, false);
         res.write(`data: ${JSON.stringify({ type: "content", data: gapsMessage })}\n\n`);
       }
 
@@ -454,7 +469,7 @@ export async function registerRoutes(
         });
       }
 
-      const { sessionId, message } = parsed.data;
+      const { sessionId, message, overrideEnabled } = parsed.data;
       const pkb = loadPKB(sessionId);
       if (!pkb) {
         return res.status(404).json({ error: "Session not found" });
@@ -470,7 +485,7 @@ export async function registerRoutes(
         primaryMode: pkb.meta.primary_mode as PrimaryMode | undefined,
       };
 
-      for await (const chunk of streamExplainProduct(context, message)) {
+      for await (const chunk of streamExplainProduct(context, message, overrideEnabled)) {
         res.write(`data: ${JSON.stringify({ type: "content", data: chunk })}\n\n`);
       }
 

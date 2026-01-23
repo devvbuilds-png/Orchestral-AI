@@ -28,6 +28,18 @@ ANSWER TYPES:
 - For comparisons: Use differentiation info from PKB
 - For pricing: Share what's known, note if details are limited
 
+HANDLING DECLINED/MISSING INFORMATION:
+If someone asks about information that was explicitly declined by the product owner:
+- Politely explain that "This specific information wasn't provided during the knowledge gathering process"
+- Don't speculate or make up answers
+- Suggest what you CAN tell them instead
+
+PARTIAL KNOWLEDGE MODE:
+If operating with partial knowledge (override mode), be upfront about limitations:
+- Start responses with an acknowledgment that your knowledge may be incomplete
+- Be more careful about definitive statements
+- Encourage the user to verify critical details with the product owner
+
 IMPORTANT:
 - You represent an outsider's perspective learning about this product
 - Be honest about gaps in knowledge
@@ -35,7 +47,8 @@ IMPORTANT:
 
 export async function explainProduct(
   context: AgentContext,
-  question: string
+  question: string,
+  overrideEnabled: boolean = false
 ): Promise<string> {
   const pkb = loadPKB(context.sessionId);
   if (!pkb) {
@@ -43,15 +56,29 @@ export async function explainProduct(
   }
 
   const pkbSnapshot = formatPKBForContext(pkb);
+  const declinedFields = (pkb.meta?.inputs as any)?.declined_fields || [];
+
+  let modeContext = "";
+  if (overrideEnabled && pkb.derived_insights?.confidence?.level !== "high") {
+    modeContext = `
+IMPORTANT: This is operating in OVERRIDE MODE with partial knowledge.
+The confidence level is: ${pkb.derived_insights?.confidence?.level || "low"}
+Be upfront about limitations and acknowledge that some information may be incomplete.
+`;
+  }
+
+  const declinedContext = declinedFields.length > 0
+    ? `\n\nDECLINED FIELDS (the product owner chose not to provide this information):\n${declinedFields.join("\n")}\n`
+    : "";
 
   const userPrompt = `Based on the following Product Knowledge Base, answer this question:
-
+${modeContext}
 QUESTION: ${question}
 
 PRODUCT KNOWLEDGE BASE:
-${pkbSnapshot}
+${pkbSnapshot}${declinedContext}
 
-Provide a helpful, accurate answer based only on the information in the PKB. If the answer isn't in the PKB, say so honestly.`;
+Provide a helpful, accurate answer based only on the information in the PKB. If the answer isn't in the PKB or was declined, say so politely.`;
 
   const response = await callLLM(EXPLAINER_SYSTEM_PROMPT, userPrompt, {
     maxTokens: 2048,
@@ -62,7 +89,8 @@ Provide a helpful, accurate answer based only on the information in the PKB. If 
 
 export async function* streamExplainProduct(
   context: AgentContext,
-  question: string
+  question: string,
+  overrideEnabled: boolean = false
 ): AsyncGenerator<string> {
   const pkb = loadPKB(context.sessionId);
   if (!pkb) {
@@ -70,15 +98,29 @@ export async function* streamExplainProduct(
   }
 
   const pkbSnapshot = formatPKBForContext(pkb);
+  const declinedFields = (pkb.meta?.inputs as any)?.declined_fields || [];
+
+  let modeContext = "";
+  if (overrideEnabled && pkb.derived_insights?.confidence?.level !== "high") {
+    modeContext = `
+IMPORTANT: This is operating in OVERRIDE MODE with partial knowledge.
+The confidence level is: ${pkb.derived_insights?.confidence?.level || "low"}
+Be upfront about limitations and acknowledge that some information may be incomplete.
+`;
+  }
+
+  const declinedContext = declinedFields.length > 0
+    ? `\n\nDECLINED FIELDS (the product owner chose not to provide this information):\n${declinedFields.join("\n")}\n`
+    : "";
 
   const userPrompt = `Based on the following Product Knowledge Base, answer this question:
-
+${modeContext}
 QUESTION: ${question}
 
 PRODUCT KNOWLEDGE BASE:
-${pkbSnapshot}
+${pkbSnapshot}${declinedContext}
 
-Provide a helpful, accurate answer based only on the information in the PKB. If the answer isn't in the PKB, say so honestly.`;
+Provide a helpful, accurate answer based only on the information in the PKB. If the answer isn't in the PKB or was declined, say so politely.`;
 
   for await (const chunk of streamLLM(EXPLAINER_SYSTEM_PROMPT, userPrompt, {
     maxTokens: 2048,

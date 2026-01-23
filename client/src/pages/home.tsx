@@ -3,6 +3,8 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { SessionSidebar } from "@/components/session-sidebar";
 import { ChatInterface } from "@/components/chat-interface";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SessionNamingDialog } from "@/components/session-naming-dialog";
+import { ProcessingOverlay } from "@/components/processing-overlay";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import {
@@ -25,7 +27,7 @@ const INITIAL_MESSAGES: Record<string, { content: string; type: PKBChatMessage["
     type: "product_type_question",
   },
   onboarding: {
-    content: "Great choice! Now I'll help you gather information about your product.\n\nFor the best results, you can upload documents like:\n• Product documentation or specs\n• Pitch decks or presentations\n• Marketing materials\n• Website content (paste a URL)\n• Any text files describing your product\n\nThe more context you provide, the better I can understand your product!",
+    content: "Great choice! Now I'll help you gather information about your product.\n\nFor the best results, you can upload documents like:\n\n- Product documentation or specs\n- Pitch decks or presentations\n- Marketing materials\n- Website content (paste a URL)\n- Any text files describing your product\n\nThe more context you provide, the better I can understand your product!",
     type: "upload_prompt",
   },
 };
@@ -36,16 +38,24 @@ interface CrawlProgress {
   currentUrl: string;
 }
 
+type ProcessingPhase = "uploading" | "fetching" | "analyzing" | "synthesizing" | "idle";
+
 export default function Home() {
   const { toast } = useToast();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>("idle");
+  const [processingDetails, setProcessingDetails] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState("");
   const [showStorytellingSummary, setShowStorytellingSummary] = useState(false);
   const [storytellingSummary, setStorytellingSummary] = useState<any>(null);
   const [crawlProgress, setCrawlProgress] = useState<CrawlProgress | null>(null);
+  const [showNamingDialog, setShowNamingDialog] = useState(false);
+  const [overrideEnabled, setOverrideEnabled] = useState(false);
+  const [confidenceReasons, setConfidenceReasons] = useState<string[]>([]);
+  const [confidenceImprovements, setConfidenceImprovements] = useState<string[]>([]);
 
   useEffect(() => {
     const stored = loadSessions();
@@ -66,7 +76,12 @@ export default function Home() {
   }, []);
 
   const handleNewSession = useCallback(() => {
-    const newSession = createNewSession();
+    setShowNamingDialog(true);
+  }, []);
+
+  const handleSessionNameConfirmed = useCallback((productName: string) => {
+    setShowNamingDialog(false);
+    const newSession = createNewSession(productName);
     const sessionWithMessage = addMessageToSession(
       newSession,
       "assistant",
@@ -77,6 +92,11 @@ export default function Home() {
     setCurrentSessionId(sessionWithMessage.id);
     setShowStorytellingSummary(false);
     setStorytellingSummary(null);
+    setOverrideEnabled(false);
+  }, []);
+
+  const handleNamingCancel = useCallback(() => {
+    setShowNamingDialog(false);
   }, []);
 
   const handleSessionSelect = useCallback((sessionId: string) => {
@@ -87,6 +107,7 @@ export default function Home() {
     } else {
       setShowStorytellingSummary(false);
     }
+    setOverrideEnabled(false);
   }, [sessions]);
 
   const handleDeleteSession = useCallback((sessionId: string) => {
@@ -131,9 +152,11 @@ export default function Home() {
     if (!currentSession || files.length === 0) return;
 
     setIsProcessing(true);
+    setProcessingPhase("uploading");
     
     try {
       for (const file of files) {
+        setProcessingDetails(file.name);
         const formData = new FormData();
         formData.append("file", file);
         formData.append("sessionId", currentSession.id);
@@ -159,6 +182,8 @@ export default function Home() {
         updateSession(updated);
       }
 
+      setProcessingPhase("analyzing");
+      setProcessingDetails("");
       await processDocuments(currentSession.id);
     } catch (error) {
       toast({
@@ -168,6 +193,8 @@ export default function Home() {
       });
     } finally {
       setIsProcessing(false);
+      setProcessingPhase("idle");
+      setProcessingDetails("");
     }
   }, [currentSession, updateSession, toast]);
 
@@ -175,6 +202,8 @@ export default function Home() {
     if (!currentSession) return;
 
     setIsProcessing(true);
+    setProcessingPhase("fetching");
+    setProcessingDetails(url);
     
     try {
       const response = await apiRequest("POST", "/api/sessions/fetch-url", {
@@ -187,6 +216,8 @@ export default function Home() {
       updated = updateSessionState(updated, "processing");
       updateSession(updated);
 
+      setProcessingPhase("analyzing");
+      setProcessingDetails("");
       await processDocuments(currentSession.id);
     } catch (error) {
       toast({
@@ -196,6 +227,8 @@ export default function Home() {
       });
     } finally {
       setIsProcessing(false);
+      setProcessingPhase("idle");
+      setProcessingDetails("");
     }
   }, [currentSession, updateSession, toast]);
 
@@ -203,6 +236,7 @@ export default function Home() {
     if (!currentSession) return;
 
     setIsProcessing(true);
+    setProcessingPhase("fetching");
     setCrawlProgress({ current: 0, total: 1, currentUrl: url });
     
     try {
@@ -249,6 +283,7 @@ export default function Home() {
                 total: data.total,
                 currentUrl: data.currentUrl,
               });
+              setProcessingDetails(`Page ${data.current}/${data.total}`);
             } else if (data.type === "complete") {
               totalPages = data.totalPages;
             } else if (data.type === "done") {
@@ -270,6 +305,8 @@ export default function Home() {
       updated = updateSessionState(updated, "processing");
       updateSession(updated);
 
+      setProcessingPhase("analyzing");
+      setProcessingDetails("");
       await processDocuments(currentSession.id);
     } catch (error) {
       setCrawlProgress(null);
@@ -280,7 +317,9 @@ export default function Home() {
       });
     } finally {
       setIsProcessing(false);
+      setProcessingPhase("idle");
       setCrawlProgress(null);
+      setProcessingDetails("");
     }
   }, [currentSession, updateSession, toast]);
 
@@ -289,6 +328,7 @@ export default function Home() {
     if (!targetSessionId) return;
 
     setIsProcessing(true);
+    setProcessingPhase("synthesizing");
     setIsStreaming(true);
     setStreamingMessage("");
 
@@ -326,37 +366,57 @@ export default function Home() {
               fullMessage += event.data;
               setStreamingMessage(fullMessage);
             } else if (event.type === "confidence") {
-              let updated = updateSessionConfidence(
-                currentSession,
-                event.level,
-                event.score
-              );
-              updateSession(updated);
+              setSessions(prev => prev.map(s => {
+                if (s.id === targetSessionId) {
+                  return {
+                    ...s,
+                    confidence_level: event.level,
+                    confidence_score: event.score,
+                  };
+                }
+                return s;
+              }));
+              if (event.reasons) {
+                setConfidenceReasons(event.reasons);
+              }
+              if (event.improvements) {
+                setConfidenceImprovements(event.improvements);
+              }
             } else if (event.type === "product_name") {
-              let updated = updateSessionName(currentSession, event.name);
-              updateSession(updated);
+              setSessions(prev => prev.map(s => {
+                if (s.id === targetSessionId) {
+                  return { ...s, product_name: event.name };
+                }
+                return s;
+              }));
             } else if (event.type === "summary") {
               setStorytellingSummary(event.data);
             } else if (event.type === "done") {
               setIsStreaming(false);
-              let updated = addMessageToSession(
-                currentSession,
-                "assistant",
-                fullMessage,
-                "synthesis_summary"
-              );
+              setProcessingPhase("idle");
               
-              if (event.has_gaps) {
-                updated = updateSessionState(updated, "gap_interview");
-              } else {
-                updated = updateSessionState(updated, "ready");
-                setShowStorytellingSummary(true);
-              }
-              
-              updateSession(updated);
+              setSessions(prev => prev.map(s => {
+                if (s.id === targetSessionId) {
+                  let updated = addMessageToSession(
+                    s,
+                    "assistant",
+                    fullMessage,
+                    "synthesis_summary"
+                  );
+                  
+                  if (event.has_gaps) {
+                    updated = updateSessionState(updated, "gap_interview");
+                  } else {
+                    updated = updateSessionState(updated, "ready");
+                    setShowStorytellingSummary(true);
+                  }
+                  
+                  return updated;
+                }
+                return s;
+              }));
             }
           } catch (e) {
-            // Ignore JSON parse errors
           }
         }
       }
@@ -367,11 +427,12 @@ export default function Home() {
         variant: "destructive",
       });
       setIsStreaming(false);
+      setProcessingPhase("idle");
     } finally {
       setIsProcessing(false);
       setStreamingMessage("");
     }
-  }, [currentSession, updateSession, toast]);
+  }, [currentSession, toast]);
 
   const handleSendMessage = useCallback(async (content: string) => {
     if (!currentSession) return;
@@ -394,6 +455,7 @@ export default function Home() {
           sessionId: currentSession.id,
           message: content,
           mode: currentSession.chat_mode,
+          overrideEnabled,
         }),
       });
 
@@ -428,11 +490,15 @@ export default function Home() {
               const messageType = currentSession.chat_mode === "explainer" 
                 ? "explainer_response" 
                 : "text";
-              updated = addMessageToSession(updated, "assistant", fullMessage, messageType);
-              updateSession(updated);
+              
+              setSessions(prev => prev.map(s => {
+                if (s.id === currentSession.id) {
+                  return addMessageToSession(s, "assistant", fullMessage, messageType);
+                }
+                return s;
+              }));
             }
           } catch (e) {
-            // Ignore JSON parse errors
           }
         }
       }
@@ -446,13 +512,17 @@ export default function Home() {
     } finally {
       setStreamingMessage("");
     }
-  }, [currentSession, updateSession, toast]);
+  }, [currentSession, updateSession, toast, overrideEnabled]);
 
-  const handleModeChange = useCallback((mode: ChatMode) => {
+  const handleModeChange = useCallback((mode: ChatMode, override?: boolean) => {
     if (!currentSession) return;
     const updated = updateSessionChatMode(currentSession, mode);
     updateSession(updated);
   }, [currentSession, updateSession]);
+
+  const handleOverrideChange = useCallback((enabled: boolean) => {
+    setOverrideEnabled(enabled);
+  }, []);
 
   const handleRecheckGaps = useCallback(async () => {
     if (!currentSession) return;
@@ -501,10 +571,27 @@ export default function Home() {
               crawlProgress={crawlProgress}
               showStorytellingSummary={showStorytellingSummary}
               storytellingSummary={storytellingSummary}
+              confidenceReasons={confidenceReasons}
+              confidenceImprovements={confidenceImprovements}
+              overrideEnabled={overrideEnabled}
+              onOverrideChange={handleOverrideChange}
             />
           </main>
         </div>
       </div>
+
+      <SessionNamingDialog
+        open={showNamingDialog}
+        onConfirm={handleSessionNameConfirmed}
+        onCancel={handleNamingCancel}
+      />
+
+      {processingPhase !== "idle" && !isStreaming && (
+        <ProcessingOverlay
+          phase={processingPhase}
+          details={processingDetails}
+        />
+      )}
     </SidebarProvider>
   );
 }

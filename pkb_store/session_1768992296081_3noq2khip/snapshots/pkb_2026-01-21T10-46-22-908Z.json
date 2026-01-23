@@ -1,0 +1,198 @@
+{
+  "meta": {
+    "session_id": "session_1768992296081_3noq2khip",
+    "product_type": "b2c",
+    "version": "0.1",
+    "created_at": "2026-01-21T10:44:58.627Z",
+    "last_updated": "2026-01-21T10:46:22.908Z",
+    "inputs": {
+      "documents": [],
+      "urls": [
+        {
+          "url": "https://www.notion.com/help/category/new-to-notion",
+          "fetched_at": "2026-01-21T10:45:56.458Z",
+          "title": "Getting started – Notion Help Center"
+        }
+      ],
+      "founder_sessions": []
+    }
+  },
+  "facts": {
+    "product_identity": {
+      "name": {
+        "value": "Notion",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/category/new-to-notion",
+            "captured_at": "2026-01-21T10:46:08.335Z",
+            "evidence": "Curious about what Notion is? We'll show you right here, and in the articles to come."
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "one_liner": {
+        "value": "Welcome to the connected workspace where better, faster work happens.",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/category/new-to-notion",
+            "captured_at": "2026-01-21T10:46:08.335Z",
+            "evidence": "Welcome to the connected workspace where better, faster work happens."
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "website": {
+        "value": "https://www.notion.com/help/category/new-to-notion",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/category/new-to-notion",
+            "captured_at": "2026-01-21T10:46:08.335Z",
+            "evidence": "SOURCE: https://www.notion.com/help/category/new-to-notion"
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    },
+    "features": {
+      "value": [
+        {
+          "name": "Building blocks",
+          "what_it_does": "Allows users to build whatever they want, however they want.",
+          "why_it_matters": "Provides flexibility and customization."
+        },
+        {
+          "name": "Pages and subpages",
+          "what_it_does": "Enables users to create fresh canvases and organize pages inside pages.",
+          "why_it_matters": "Helps users structure their workspace intuitively without folders."
+        },
+        {
+          "name": "Databases",
+          "what_it_does": "Helps manage and organize pages, with actions such as editing database properties, views, filters, and sorts.",
+          "why_it_matters": "Improves workspace organization and efficiency."
+        },
+        {
+          "name": "Templates",
+          "what_it_does": "Provides pre-designed templates that can be adopted and customized.",
+          "why_it_matters": "Allows for quicker setup and versatility for solving various challenges."
+        },
+        {
+          "name": "Page sharing",
+          "what_it_does": "Allows users to share pages with select people, teams, or publicly on the web.",
+          "why_it_matters": "Enhances collaboration and accessibility."
+        },
+        {
+          "name": "Team communication features",
+          "what_it_does": "Improves and increases the velocity of communication within teams.",
+          "why_it_matters": "Enhances collaboration, even across time zones."
+        },
+        {
+          "name": "Badges and certifications through Notion Academy",
+          "what_it_does": "Provides opportunities to earn badges and certifications.",
+          "why_it_matters": "Helps build expertise in using Notion."
+        }
+      ],
+      "sources": [
+        {
+          "source_type": "url",
+          "source_ref": "https://www.notion.com/help/category/new-to-notion",
+          "captured_at": "2026-01-21T10:46:08.335Z",
+          "evidence": "Think of Notion as a bottomless bin of building blocks. Build whatever you want, however you want 🧱... Every page you create in Notion is a fresh canvas where you can add whatever content you want... There are no folders in Notion. Instead, you can organize pages inside pages... inside pages... Databases are a core feature in Notion that help you manage and organize your pages... To help you take on a variety of challenges with Notion, we've created lots of templates that you can adopt and customize as your own... Share any Notion page you create with select people, your whole team, or the entire web... Notion has several features designed to improve and increase the velocity of communication with your team... Build your Notion expertise by earning badges and certifications through Notion Academy 🎖️"
+        }
+      ],
+      "quality_tag": "strong"
+    },
+    "proof_assets": {
+      "testimonials": {
+        "value": [],
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/category/new-to-notion",
+            "captured_at": "2026-01-21T10:46:08.335Z",
+            "evidence": "No explicit evidence for testimonials mentioned."
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "case_studies": {
+        "value": [],
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/category/new-to-notion",
+            "captured_at": "2026-01-21T10:46:08.335Z",
+            "evidence": "No explicit evidence for case studies mentioned."
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "metrics": {
+        "value": [],
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/category/new-to-notion",
+            "captured_at": "2026-01-21T10:46:08.335Z",
+            "evidence": "No explicit evidence for metrics mentioned."
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    },
+    "constraints_assumptions": {
+      "assumptions": {
+        "value": [],
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/category/new-to-notion",
+            "captured_at": "2026-01-21T10:46:08.335Z",
+            "evidence": "No explicit evidence for assumptions mentioned."
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    },
+    "extensions": {
+      "b2c": {
+        "user_segments": {
+          "value": [],
+          "sources": [
+            {
+              "source_type": "url",
+              "source_ref": "https://www.notion.com/help/category/new-to-notion",
+              "captured_at": "2026-01-21T10:46:08.335Z",
+              "evidence": "No explicit evidence of user segments mentioned."
+            }
+          ],
+          "quality_tag": "strong"
+        }
+      }
+    }
+  },
+  "extensions": {
+    "b2b": {},
+    "b2c": {}
+  },
+  "derived_insights": {
+    "product_brief": {
+      "simple_summary": "Notion is a customizable and collaborative workspace that combines pages, databases, templates, and team communication tools to help individuals and groups organize, create, and work more efficiently.",
+      "who_its_for": "Notion is for individuals, freelancers, students, and teams who need a flexible platform for organization, project management, and collaboration.",
+      "why_it_wins": "Notion stands out due to its highly flexible building blocks, its ability to create custom structures without traditional folder-based hierarchies, and its integrated collaboration features that work across teams and even publicly.",
+      "key_message_pillars": [
+        "Flexibility through building blocks and customizable templates",
+        "Enhanced collaboration with page sharing and communication tools",
+        "Improved organization through pages, subpages, and databases"
+      ],
+      "sample_pitch": "Notion is the connected workspace where better, faster work happens. With its flexible building blocks, intuitive organization, and robust collaboration tools, it’s designed to empower individuals and teams to create, organize, and collaborate seamlessly."
+    }
+  },
+  "gaps": {
+    "current": [],
+    "history": []
+  },
+  "conflicts": []
+}

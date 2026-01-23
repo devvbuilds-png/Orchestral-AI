@@ -88,6 +88,8 @@ export async function identifyGaps(context: AgentContext): Promise<{ gaps: Gap[]
     throw new Error("PKB not found");
   }
 
+  const declinedFields: string[] = (pkb.meta?.inputs as any)?.declined_fields || [];
+
   const factsSnapshot = JSON.stringify({
     meta: {
       product_type: pkb.meta.product_type,
@@ -95,6 +97,7 @@ export async function identifyGaps(context: AgentContext): Promise<{ gaps: Gap[]
     },
     facts: pkb.facts,
     extensions: pkb.extensions,
+    declined_fields: declinedFields,
   }, null, 2);
 
   let productTypeContext: string;
@@ -126,15 +129,19 @@ Ask about:
 - Business integrations and workflows`;
   }
 
+  const declinedContext = declinedFields.length > 0
+    ? `\n\nDECLINED FIELDS (DO NOT ask about these - the user has chosen not to provide this information):\n${declinedFields.join("\n")}\n`
+    : "";
+
   const userPrompt = `${productTypeContext}
 
 Analyze the following PKB and identify missing or incomplete information.
 Remember: Only ask questions appropriate for a ${context.productType.toUpperCase()} product!
-
+${declinedContext}
 PKB STATE:
 ${factsSnapshot}
 
-Identify gaps following the required fields rules for ${context.productType.toUpperCase()} products. Return as JSON with a "gaps" array.`;
+Identify gaps following the required fields rules for ${context.productType.toUpperCase()} products. DO NOT ask about any declined fields. Return as JSON with a "gaps" array.`;
 
   const response = await callLLM(GAP_SYSTEM_PROMPT, userPrompt, {
     responseFormat: "json",
@@ -172,40 +179,44 @@ Identify gaps following the required fields rules for ${context.productType.toUp
   return { gaps, updates };
 }
 
-export function formatGapsForChat(gaps: Gap[]): string {
+export function formatGapsForChat(gaps: Gap[], includeContext: boolean = true): string {
   if (gaps.length === 0) {
     return "Great news! I have a comprehensive understanding of your product. No critical gaps remain.";
   }
 
   const criticalGaps = gaps.filter(g => g.severity === "critical");
   const importantGaps = gaps.filter(g => g.severity === "important");
-  const niceToHaveGaps = gaps.filter(g => g.severity === "nice_to_have");
 
   const parts: string[] = [];
   
-  parts.push("I've identified some gaps in my understanding of your product. Let me ask you a few questions:\n");
+  if (includeContext) {
+    parts.push("To complete my understanding, I have a few questions for you:\n");
+  }
 
   let questionNum = 1;
 
   if (criticalGaps.length > 0) {
-    parts.push("**Critical questions:**");
+    parts.push("### Key Questions\n");
     for (const gap of criticalGaps.slice(0, 3)) {
-      parts.push(`${questionNum}. ${gap.question}`);
+      parts.push(`**${questionNum}. ${gap.question}**`);
+      parts.push(`   _${gap.why_needed}_\n`);
       questionNum++;
     }
-    parts.push("");
   }
 
   if (importantGaps.length > 0 && questionNum <= 5) {
-    parts.push("**Additional questions:**");
+    if (criticalGaps.length > 0) {
+      parts.push("### Additional Questions\n");
+    }
     for (const gap of importantGaps.slice(0, 5 - questionNum + 1)) {
-      parts.push(`${questionNum}. ${gap.question}`);
+      parts.push(`**${questionNum}. ${gap.question}**`);
+      parts.push(`   _${gap.why_needed}_\n`);
       questionNum++;
     }
-    parts.push("");
   }
 
-  parts.push("Feel free to answer as many as you'd like - you can respond to multiple questions in a single message.");
+  parts.push("---\n");
+  parts.push("Feel free to answer as many as you'd like. You can respond to multiple questions in a single message, or let me know if any questions don't apply to your product.");
 
   return parts.join("\n");
 }
