@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "session_id": "session_1769134932504_wcyensqgt",
+    "product_type": "b2b",
+    "version": "0.1",
+    "created_at": "2026-01-23T02:22:18.261Z",
+    "last_updated": "2026-01-23T02:22:27.716Z",
+    "inputs": {
+      "documents": [],
+      "urls": [
+        {
+          "url": "https://example.com",
+          "fetched_at": "2026-01-23T02:22:27.716Z",
+          "title": "Example Domain"
+        }
+      ],
+      "founder_sessions": []
+    }
+  },
+  "facts": {},
+  "extensions": {
+    "b2b": {},
+    "b2c": {}
+  },
+  "derived_insights": {},
+  "gaps": {
+    "current": [],
+    "history": []
+  },
+  "conflicts": []
+}
