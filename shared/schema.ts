@@ -355,7 +355,8 @@ export const pkbChatMessageSchema = z.object({
     "gap_question",
     "gap_answers",
     "storytelling_summary",
-    "explainer_response"
+    "explainer_response",
+    "explainer_welcome"
   ]).optional(),
   metadata: z.record(z.any()).optional(),
 });

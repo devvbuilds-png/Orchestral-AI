@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "session_id": "session_1769132504820_kvxrq3972",
+    "product_type": "b2c",
+    "version": "0.1",
+    "created_at": "2026-01-23T01:42:34.024Z",
+    "last_updated": "2026-01-23T01:42:48.893Z",
+    "inputs": {
+      "documents": [],
+      "urls": [
+        {
+          "url": "https://example.com",
+          "fetched_at": "2026-01-23T01:42:44.051Z",
+          "title": "Example Domain"
+        }
+      ],
+      "founder_sessions": []
+    }
+  },
+  "facts": {},
+  "extensions": {
+    "b2b": {},
+    "b2c": {}
+  },
+  "derived_insights": {
+    "product_brief": {
+      "simple_summary": "Insufficient information is available to summarize the product effectively.",
+      "who_its_for": "The target users are unclear due to missing product and audience details.",
+      "why_it_wins": "There is no information available to identify competitive advantages or differentiators.",
+      "key_message_pillars": [
+        "No data",
+        "No data",
+        "No data"
+      ],
+      "sample_pitch": "The product's nature and value proposition are undefined, preventing a coherent pitch."
+    },
+    "confidence": {
+      "level": "low",
+      "score": 0,
+      "reasons": [
+        "The Product Knowledge Base contains no facts to analyze or synthesize.",
+        "Target users, features, value proposition, and competitive advantages are wholly missing."
+      ]
+    },
+    "icp_hypothesis": {
+      "b2b_icp_hypothesis": "Not applicable, as clarified that the product is B2C.",
+      "b2c_segment_hypothesis": "Insufficient information to form a hypothesis about target consumer segments."
+    }
+  },
+  "gaps": {
+    "current": [],
+    "history": []
+  },
+  "conflicts": []
+}

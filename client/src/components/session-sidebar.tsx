@@ -14,7 +14,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Package, Trash2, MoreHorizontal } from "lucide-react";
+import { Plus, Package, Trash2, MoreHorizontal, Pencil } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +29,7 @@ interface SessionSidebarProps {
   onSessionSelect: (sessionId: string) => void;
   onNewSession: () => void;
   onDeleteSession: (sessionId: string) => void;
+  onRenameSession: (sessionId: string) => void;
 }
 
 export function SessionSidebar({
@@ -37,6 +38,7 @@ export function SessionSidebar({
   onSessionSelect,
   onNewSession,
   onDeleteSession,
+  onRenameSession,
 }: SessionSidebarProps) {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -143,6 +145,16 @@ export function SessionSidebar({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRenameSession(session.id);
+                              }}
+                              data-testid={`button-rename-session-${session.id}`}
+                            >
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Rename
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onClick={(e) => {

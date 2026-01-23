@@ -53,6 +53,8 @@ export default function Home() {
   const [storytellingSummary, setStorytellingSummary] = useState<any>(null);
   const [crawlProgress, setCrawlProgress] = useState<CrawlProgress | null>(null);
   const [showNamingDialog, setShowNamingDialog] = useState(false);
+  const [namingMode, setNamingMode] = useState<"create" | "rename">("create");
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [overrideEnabled, setOverrideEnabled] = useState(false);
   const [confidenceReasons, setConfidenceReasons] = useState<string[]>([]);
   const [confidenceImprovements, setConfidenceImprovements] = useState<string[]>([]);
@@ -76,27 +78,46 @@ export default function Home() {
   }, []);
 
   const handleNewSession = useCallback(() => {
+    setNamingMode("create");
+    setRenamingSessionId(null);
+    setShowNamingDialog(true);
+  }, []);
+
+  const handleRenameSession = useCallback((sessionId: string) => {
+    setNamingMode("rename");
+    setRenamingSessionId(sessionId);
     setShowNamingDialog(true);
   }, []);
 
   const handleSessionNameConfirmed = useCallback((productName: string) => {
     setShowNamingDialog(false);
-    const newSession = createNewSession(productName);
-    const sessionWithMessage = addMessageToSession(
-      newSession,
-      "assistant",
-      INITIAL_MESSAGES.product_type_selection.content,
-      INITIAL_MESSAGES.product_type_selection.type
-    );
-    setSessions(prev => [sessionWithMessage, ...prev]);
-    setCurrentSessionId(sessionWithMessage.id);
-    setShowStorytellingSummary(false);
-    setStorytellingSummary(null);
-    setOverrideEnabled(false);
-  }, []);
+    
+    if (namingMode === "rename" && renamingSessionId) {
+      setSessions(prev => prev.map(s => 
+        s.id === renamingSessionId 
+          ? updateSessionName(s, productName)
+          : s
+      ));
+      setRenamingSessionId(null);
+    } else {
+      const newSession = createNewSession(productName);
+      const sessionWithMessage = addMessageToSession(
+        newSession,
+        "assistant",
+        INITIAL_MESSAGES.product_type_selection.content,
+        INITIAL_MESSAGES.product_type_selection.type
+      );
+      setSessions(prev => [sessionWithMessage, ...prev]);
+      setCurrentSessionId(sessionWithMessage.id);
+      setShowStorytellingSummary(false);
+      setStorytellingSummary(null);
+      setOverrideEnabled(false);
+    }
+  }, [namingMode, renamingSessionId]);
 
   const handleNamingCancel = useCallback(() => {
     setShowNamingDialog(false);
+    setRenamingSessionId(null);
   }, []);
 
   const handleSessionSelect = useCallback((sessionId: string) => {
@@ -514,11 +535,39 @@ export default function Home() {
     }
   }, [currentSession, updateSession, toast, overrideEnabled]);
 
+  const EXPLAINER_WELCOME = `Welcome to Explainer Mode! I'm ready to answer any questions about your product.
+
+**What I can help with:**
+- Explaining your product to different audiences
+- Crafting elevator pitches and talking points
+- Answering specific questions about features, pricing, or use cases
+- Generating content based on your product knowledge
+
+**How to use me:**
+- Ask questions like "Explain our product to a first-time user"
+- Request "What's our main value proposition?"
+- Try "Create a 30-second pitch for investors"
+
+Just type your question below and I'll provide detailed answers based on the knowledge I've learned about your product.`;
+
   const handleModeChange = useCallback((mode: ChatMode, override?: boolean) => {
     if (!currentSession) return;
-    const updated = updateSessionChatMode(currentSession, mode);
+    
+    let updated = updateSessionChatMode(currentSession, mode);
+    
+    if (mode === "explainer") {
+      updated = addMessageToSession(
+        updated,
+        "assistant",
+        overrideEnabled 
+          ? `**Note:** You're using Explainer mode with partial knowledge. Some answers may be incomplete or require clarification.\n\n${EXPLAINER_WELCOME}`
+          : EXPLAINER_WELCOME,
+        "explainer_welcome"
+      );
+    }
+    
     updateSession(updated);
-  }, [currentSession, updateSession]);
+  }, [currentSession, updateSession, overrideEnabled]);
 
   const handleOverrideChange = useCallback((enabled: boolean) => {
     setOverrideEnabled(enabled);
@@ -549,6 +598,7 @@ export default function Home() {
           onSessionSelect={handleSessionSelect}
           onNewSession={handleNewSession}
           onDeleteSession={handleDeleteSession}
+          onRenameSession={handleRenameSession}
         />
         <div className="flex flex-col flex-1 min-w-0">
           <header className="flex items-center justify-between gap-2 p-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -584,9 +634,11 @@ export default function Home() {
         open={showNamingDialog}
         onConfirm={handleSessionNameConfirmed}
         onCancel={handleNamingCancel}
+        mode={namingMode}
+        initialName={renamingSessionId ? sessions.find(s => s.id === renamingSessionId)?.product_name || "" : ""}
       />
 
-      {processingPhase !== "idle" && !isStreaming && (
+      {processingPhase !== "idle" && (
         <ProcessingOverlay
           phase={processingPhase}
           details={processingDetails}

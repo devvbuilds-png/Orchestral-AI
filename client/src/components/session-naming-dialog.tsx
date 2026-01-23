@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,10 +8,24 @@ interface SessionNamingDialogProps {
   open: boolean;
   onConfirm: (name: string) => void;
   onCancel: () => void;
+  mode?: "create" | "rename";
+  initialName?: string;
 }
 
-export function SessionNamingDialog({ open, onConfirm, onCancel }: SessionNamingDialogProps) {
-  const [productName, setProductName] = useState("");
+export function SessionNamingDialog({ 
+  open, 
+  onConfirm, 
+  onCancel,
+  mode = "create",
+  initialName = "",
+}: SessionNamingDialogProps) {
+  const [productName, setProductName] = useState(initialName);
+
+  useEffect(() => {
+    if (open) {
+      setProductName(initialName);
+    }
+  }, [open, initialName]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,13 +35,18 @@ export function SessionNamingDialog({ open, onConfirm, onCancel }: SessionNaming
     }
   };
 
+  const isRename = mode === "rename";
+
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onCancel()}>
       <DialogContent className="sm:max-w-md" data-testid="dialog-session-naming">
         <DialogHeader>
-          <DialogTitle>Name Your Product</DialogTitle>
+          <DialogTitle>{isRename ? "Rename Product" : "Name Your Product"}</DialogTitle>
           <DialogDescription>
-            What product are you building knowledge for? This helps keep your sessions organized.
+            {isRename 
+              ? "Enter a new name for this product session."
+              : "What product are you building knowledge for? This helps keep your sessions organized."
+            }
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
@@ -49,7 +68,7 @@ export function SessionNamingDialog({ open, onConfirm, onCancel }: SessionNaming
               Cancel
             </Button>
             <Button type="submit" disabled={!productName.trim()} data-testid="button-confirm-naming">
-              Start Session
+              {isRename ? "Save" : "Start Session"}
             </Button>
           </DialogFooter>
         </form>

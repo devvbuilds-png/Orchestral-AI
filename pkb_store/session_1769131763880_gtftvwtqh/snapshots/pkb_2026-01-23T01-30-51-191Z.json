@@ -1,0 +1,114 @@
+{
+  "meta": {
+    "session_id": "session_1769131763880_gtftvwtqh",
+    "product_type": "b2c",
+    "version": "0.1",
+    "created_at": "2026-01-23T01:29:36.940Z",
+    "last_updated": "2026-01-23T01:30:51.191Z",
+    "inputs": {
+      "documents": [],
+      "urls": [
+        {
+          "url": "https://www.notion.com/help/guides/category/documentation",
+          "fetched_at": "2026-01-23T01:30:09.136Z",
+          "title": "Documentation"
+        }
+      ],
+      "founder_sessions": []
+    }
+  },
+  "facts": {
+    "product_identity": {
+      "name": {
+        "value": "Notion",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+            "captured_at": "2026-01-23T01:30:27.242Z",
+            "evidence": "Learn how to use Notion for a variety of use cases."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+            "captured_at": "2026-01-23T01:30:39.361Z",
+            "evidence": "Learn how to use Notion AI to transform text, automate simple tasks, and generate new content inside your connected workspace."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 3/3)",
+            "captured_at": "2026-01-23T01:30:51.189Z",
+            "evidence": "In Notion, it's easy to add code blocks to any document - there's even built in syntax coloring for 60+ programming languages!"
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "category": {
+        "value": "productivity software",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+            "captured_at": "2026-01-23T01:30:27.242Z",
+            "evidence": "Learn how to use Notion for a variety of use cases. Whether youʼre looking to create a project management system or a 1:1 doc, Notion can help."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 2/3)",
+            "captured_at": "2026-01-23T01:30:39.361Z",
+            "evidence": "Learn how to use Notion AI to transform text, automate simple tasks, and generate new content inside your connected workspace."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 3/3)",
+            "captured_at": "2026-01-23T01:30:51.189Z",
+            "evidence": "Discover how to build a connected workspace for product teams that simplifies workflows and improves collaboration in Notion."
+          }
+        ],
+        "quality_tag": "strong"
+      },
+      "website": {
+        "value": "https://www.notion.com/help/guides/category/documentation",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+            "captured_at": "2026-01-23T01:30:27.242Z",
+            "evidence": "SOURCE: https://www.notion.com/help/guides/category/documentation"
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    },
+    "value_proposition": {
+      "primary_problem": {
+        "value": "Transform scattered company information into an organized, accessible knowledge hub.",
+        "sources": [
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 1/3)",
+            "captured_at": "2026-01-23T01:30:27.242Z",
+            "evidence": "Transform scattered company information into an organized, accessible knowledge hub with Notion."
+          },
+          {
+            "source_type": "url",
+            "source_ref": "https://www.notion.com/help/guides/category/documentation (part 3/3)",
+            "captured_at": "2026-01-23T01:30:51.189Z",
+            "evidence": "Link previews unite teams by giving them access to scattered information they need to execute — without ever leaving Notion."
+          }
+        ],
+        "quality_tag": "strong"
+      }
+    }
+  },
+  "extensions": {
+    "b2b": {},
+    "b2c": {}
+  },
+  "derived_insights": {},
+  "gaps": {
+    "current": [],
+    "history": []
+  },
+  "conflicts": []
+}
