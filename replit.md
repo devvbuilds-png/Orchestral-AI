@@ -66,11 +66,12 @@ The system employs specialized AI agents that work together:
 
 ### Key Features
 - **Session Naming**: Users must name their product before starting a session (`session-naming-dialog.tsx`)
-- **Processing Overlay**: Shows during uploads, URL fetches, and analysis with explanatory text (`processing-overlay.tsx`)
+- **Session Rename**: Editable from three-dots menu on each session in sidebar
+- **Processing Overlay**: Shows during uploads, URL fetches, and analysis with explanatory text - remains visible until AI responds (`processing-overlay.tsx`)
 - **Confidence Bar**: Colored bar at top of chat showing knowledge confidence, hover-expandable (`confidence-bar.tsx`)
 - **User Refusal Handling**: Tracks declined fields, excludes from future gap questions
 - **Explainer Override**: Switch to use explainer mode before high confidence with warning (`mode-toggle.tsx`)
-- **Explainer Welcome**: Fresh chat with usage instructions when entering explainer mode
+- **Explainer Welcome**: Fresh welcome message added to chat when entering explainer mode, with partial knowledge warning if override enabled
 - **Initial Summary**: AI reviews and summarizes learned information before asking questions
 
 ### Database
