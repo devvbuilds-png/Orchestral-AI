@@ -61,7 +61,7 @@ export function ModeToggle({
                 data-testid="button-mode-explainer"
               >
                 {!canUseExplainer && <Lock className="h-3 w-3" />}
-                {overrideEnabled && !explainerEnabled && <AlertTriangle className="h-3 w-3 text-yellow-500" />}
+                {overrideEnabled && !explainerEnabled && <AlertTriangle className="h-3 w-3 text-glow-amber" />}
                 <Sparkles className="h-4 w-4" />
                 <span className="hidden sm:inline">Explainer</span>
               </Button>

@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orchestral-AI · Agent Architecture Map</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#070809;color:#d0d4d8;font-family:system-ui,-apple-system,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
+
+/* ─── HEADER ─── */
+#hdr{background:#0b0d10;border-bottom:1px solid #1c2028;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-shrink:0;flex-wrap:wrap}
+#hdr h1{font-size:14px;font-weight:700;color:#fff;white-space:nowrap;letter-spacing:.02em}
+#hdr h1 span{color:#de7356}
+.tabs{display:flex;gap:2px}
+.tb{background:transparent;border:1px solid #1c2028;color:#666;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .15s;letter-spacing:.02em}
+.tb:hover{color:#bbb;border-color:#2a2f38}
+.tb.on{background:#de7356;border-color:#de7356;color:#fff}
+.presets{display:flex;gap:4px;margin-left:auto}
+.ps{background:#111316;border:1px solid #1c2028;color:#666;padding:4px 9px;border-radius:5px;cursor:pointer;font-size:11px}
+.ps:hover{color:#bbb;border-color:#333}
+.ps.on{border-color:#de7356;color:#de7356}
+
+/* ─── BODY ─── */
+#body{display:flex;flex:1;overflow:hidden}
+
+/* ─── LEFT SIDEBAR ─── */
+#sb{width:200px;background:#0b0d10;border-right:1px solid #1c2028;padding:12px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;flex-shrink:0}
+.sl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#3a4050;margin-bottom:6px}
+.lr{display:flex;align-items:center;gap:6px;margin-bottom:5px;cursor:pointer;user-select:none}
+.lr input{cursor:pointer;accent-color:#de7356}
+.ld{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.ll{font-size:11px;color:#888}
+.lc{font-size:10px;color:#3a4050;margin-left:auto}
+.cr{display:flex;align-items:center;gap:6px;margin-bottom:5px;cursor:pointer;user-select:none}
+.cr input{cursor:pointer;accent-color:#de7356}
+.cl{width:18px;height:2px;flex-shrink:0;border-radius:1px}
+.cn{font-size:11px;color:#888}
+hr.div{border:none;border-top:1px solid #1c2028;margin:0}
+.cmt-item{background:#111316;border:1px solid #1c2028;border-radius:6px;padding:8px;margin-bottom:6px}
+.cmt-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.cmt-nm{font-size:10px;font-weight:700;color:#de7356}
+.cmt-del{background:none;border:none;color:#3a4050;cursor:pointer;font-size:14px;line-height:1;padding:0}
+.cmt-del:hover{color:#ef4444}
+.cmt-tx{font-size:11px;color:#666;line-height:1.4}
+.no-cmt{font-size:11px;color:#2a3040;font-style:italic}
+
+/* ─── CENTER ─── */
+#ctr{flex:1;overflow:hidden;position:relative;display:flex}
+.panel{display:none;flex:1;overflow:auto;flex-direction:column}
+.panel.on{display:flex}
+
+/* ─── DETAIL SLIDE-IN ─── */
+#dp{width:0;background:#0b0d10;border-left:1px solid #1c2028;overflow:hidden;transition:width .2s ease;flex-shrink:0;position:relative}
+#dp.open{width:360px}
+#dpc{width:360px;padding:16px;overflow-y:auto;height:100%}
+.dp-close{position:absolute;top:10px;right:10px;background:none;border:none;color:#3a4050;cursor:pointer;font-size:18px;line-height:1;z-index:5}
+.dp-close:hover{color:#bbb}
+.dp-badge{display:inline-block;font-size:9px;font-weight:800;padding:3px 8px;border-radius:4px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em}
+.dp-title{font-size:17px;font-weight:800;color:#fff;margin-bottom:2px}
+.dp-file{font-size:10px;color:#3a4050;font-family:'Courier New',monospace;margin-bottom:12px}
+.dp-sec{margin-bottom:14px}
+.dp-sec h4{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#3a4050;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.dp-sec h4::after{content:'';flex:1;height:1px;background:#1c2028}
+.dp-sec p,.dp-sec li{font-size:11px;color:#888;line-height:1.6}
+.dp-sec ul{padding-left:14px}
+.kb-tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;margin:2px 2px 2px 0}
+.kb-r{background:#0a1f2a;color:#06b6d4}
+.kb-w{background:#1f0a0a;color:#ef4444}
+.kb-rw{background:#0a1f0a;color:#10b981}
+.kb-n{background:#1a1c20;color:#444}
+.pt{background:#101316;border:1px solid #1c2028;border-radius:6px;padding:8px 10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#666;width:100%;text-align:left;margin-bottom:2px}
+.pt:hover{border-color:#252a33;color:#aaa}
+.pt .arr{font-size:9px;transition:transform .15s}
+.pt.open .arr{transform:rotate(90deg)}
+.pb{display:none;background:#080a0c;border:1px solid #1c2028;border-top:none;border-radius:0 0 6px 6px;padding:10px;font-size:10.5px;line-height:1.7;color:#888;font-family:'Courier New',monospace;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow-y:auto}
+.pb.open{display:block}
+.add-cmt-btn{background:#111316;border:1px solid #1c2028;color:#666;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;width:100%;text-align:left;margin-top:8px}
+.add-cmt-btn:hover{color:#bbb;border-color:#2a2f38}
+
+/* ─── OVERVIEW PANEL ─── */
+#panel-ov{position:relative;background:#070809}
+#svg-wrap{flex:1;overflow:auto;position:relative}
+svg#diag{display:block}
+.zoom-ctrl{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:3px;z-index:10}
+.zb{background:#111316;border:1px solid #1c2028;color:#666;width:26px;height:26px;border-radius:5px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;line-height:1}
+.zb:hover{color:#bbb;border-color:#333}
+.lgnd{position:absolute;bottom:10px;left:10px;background:rgba(11,13,16,.95);border:1px solid #1c2028;border-radius:7px;padding:8px 10px}
+.lgnd-r{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.lgnd-d{width:8px;height:8px;border-radius:50%}
+.lgnd-l{font-size:10px;color:#555}
+
+/* ─── AGENTS PANEL ─── */
+#panel-ag{padding:16px}
+.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+.ag-card{background:#0b0d10;border:1px solid #1c2028;border-radius:8px;padding:14px;border-left:3px solid;cursor:pointer;transition:background .15s}
+.ag-card:hover{background:#0e1014}
+.ag-card.sel{background:#0e1014;border-color:#de7356 !important}
+.ag-name{font-size:13px;font-weight:700;color:#fff;margin-bottom:2px}
+.ag-file{font-size:10px;color:#3a4050;font-family:'Courier New',monospace;margin-bottom:8px}
+.ag-role{font-size:11px;color:#777;line-height:1.5;margin-bottom:8px}
+.ag-tags{display:flex;flex-wrap:wrap;gap:4px}
+.tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:3px}
+.t-trig{background:#1f1a0a;color:#f59e0b}
+.t-read{background:#0a1420;color:#3b82f6}
+.t-write{background:#1f0a0a;color:#ef4444}
+.t-stream{background:#0a1a1f;color:#06b6d4}
+.t-util{background:#1a0a1f;color:#8b5cf6}
+.t-gate{background:#1f1010;color:#ef4444}
+
+/* ─── FLOWS PANEL ─── */
+#panel-fl{padding:16px}
+.fl-sel{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.flb{background:#111316;border:1px solid #1c2028;color:#666;padding:6px 13px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600}
+.flb:hover{color:#bbb}
+.flb.on{background:#de7356;border-color:#de7356;color:#fff}
+.fl-box{background:#0b0d10;border:1px solid #1c2028;border-radius:8px;padding:16px;display:none}
+.fl-box.on{display:block}
+.fl-title{font-size:13px;font-weight:700;color:#fff;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #1c2028}
+.step{display:flex;gap:10px;align-items:flex-start;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #1c2028}
+.step:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.sn{width:22px;height:22px;border-radius:50%;background:#de7356;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.sc{flex:1}
+.st{font-size:12px;font-weight:700;color:#e0e4e8;margin-bottom:2px}
+.sd{font-size:11px;color:#777;line-height:1.5}
+.sc-code{font-size:10px;color:#3a5070;font-family:'Courier New',monospace;margin-top:3px;background:#080a0c;padding:3px 7px;border-radius:3px;display:inline-block}
+.agent-chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;margin:0 2px}
+
+/* ─── PKB SCHEMA PANEL ─── */
+#panel-pkb{padding:16px}
+.pkb-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pkb-card{background:#0b0d10;border:1px solid #1c2028;border-radius:8px;padding:14px}
+.pkb-sect{font-size:12px;font-weight:700;color:#de7356;margin-bottom:8px;font-family:'Courier New',monospace}
+.pkb-field{font-size:11px;color:#666;line-height:1.7;font-family:'Courier New',monospace}
+.pkb-field .k{color:#9ca3af}
+.pkb-field .t{color:#3b82f6}
+.pkb-field .c{color:#3a4050;font-style:italic}
+.pkb-field .s{color:#de7356}
+.pkb-field .note{display:block;background:#080a0c;border-left:2px solid #1c2028;padding:4px 8px;margin-top:4px;font-size:10px;color:#3a5070;font-style:italic}
+
+/* ─── PKC RULES PANEL ─── */
+#panel-pkc{padding:16px}
+.rules-wrap{display:flex;flex-direction:column;gap:14px}
+.rule-card{background:#0b0d10;border:1px solid #1c2028;border-radius:8px;padding:14px}
+.rule-title{font-size:12px;font-weight:700;color:#fff;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1c2028}
+table.rt{width:100%;border-collapse:collapse;font-size:11px}
+table.rt th{background:#080a0c;color:#555;padding:7px 10px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #1c2028}
+table.rt td{padding:7px 10px;border-bottom:1px solid #0e1014;color:#888;vertical-align:top}
+table.rt tr:hover td{background:#0e1014}
+.ok{color:#10b981;font-weight:700}
+.no{color:#ef4444;font-weight:700}
+.warn{color:#f59e0b;font-weight:700}
+.mono{font-family:'Courier New',monospace;font-size:10px;color:#6b7cff}
+
+/* ─── PROMPT BAR ─── */
+#pbar{background:#0b0d10;border-top:1px solid #1c2028;padding:9px 14px;display:flex;gap:10px;align-items:flex-start;flex-shrink:0;max-height:100px}
+#plbl{font-size:9px;color:#3a4050;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;padding-top:3px;font-weight:800}
+#ptxt{flex:1;font-size:11px;color:#666;line-height:1.5;font-style:italic;overflow-y:auto;max-height:80px}
+#cpybtn{background:#111316;border:1px solid #1c2028;color:#666;padding:5px 11px;border-radius:5px;cursor:pointer;font-size:11px;white-space:nowrap;flex-shrink:0;font-weight:600}
+#cpybtn:hover{color:#bbb}
+#cpybtn.done{background:#0a1f0a;border-color:#10b981;color:#10b981}
+
+/* ─── MODAL ─── */
+#modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+#modal-bg.open{display:flex}
+#modal{background:#0b0d10;border:1px solid #1c2028;border-radius:10px;padding:20px;width:400px;max-width:90vw}
+#modal h3{font-size:14px;font-weight:700;color:#fff;margin-bottom:4px}
+#modal p{font-size:11px;color:#555;margin-bottom:12px}
+#modal textarea{width:100%;background:#080a0c;border:1px solid #1c2028;border-radius:6px;color:#ccc;padding:8px;font-size:11px;resize:vertical;min-height:70px;font-family:inherit;outline:none}
+#modal textarea:focus{border-color:#de7356}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+.mbtn{background:#111316;border:1px solid #1c2028;color:#888;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600}
+.mbtn:hover{color:#bbb}
+.mbtn.primary{background:#de7356;border-color:#de7356;color:#fff}
+.mbtn.primary:hover{background:#e88068}
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <h1>Orchestral<span>-AI</span> Agent Architecture</h1>
+  <div class="tabs">
+    <button class="tb on" onclick="switchTab('ov')">Overview</button>
+    <button class="tb" onclick="switchTab('ag')">Agents</button>
+    <button class="tb" onclick="switchTab('fl')">Data Flows</button>
+    <button class="tb" onclick="switchTab('pkb')">PKB Schema</button>
+    <button class="tb" onclick="switchTab('pkc')">PKC Rules</button>
+  </div>
+  <div class="presets">
+    <button class="ps on" onclick="applyPreset('all')">All Layers</button>
+    <button class="ps" onclick="applyPreset('ingest')">Ingestion Flow</button>
+    <button class="ps" onclick="applyPreset('chat')">Chat Flow</button>
+    <button class="ps" onclick="applyPreset('agents')">Agents Only</button>
+  </div>
+</div>
+
+<div id="body">
+  <div id="sb">
+    <div>
+      <div class="sl">Layers</div>
+      <label class="lr"><input type="checkbox" id="lyr-client" checked onchange="toggleLayer('client',this.checked)"><span class="ld" style="background:#3b82f6"></span><span class="ll">Client / Input</span><span class="lc">4</span></label>
+      <label class="lr"><input type="checkbox" id="lyr-server" checked onchange="toggleLayer('server',this.checked)"><span class="ld" style="background:#de7356"></span><span class="ll">API Routes</span><span class="lc">1</span></label>
+      <label class="lr"><input type="checkbox" id="lyr-service" checked onchange="toggleLayer('service',this.checked)"><span class="ld" style="background:#f59e0b"></span><span class="ll">Services</span><span class="lc">1</span></label>
+      <label class="lr"><input type="checkbox" id="lyr-agent" checked onchange="toggleLayer('agent',this.checked)"><span class="ld" style="background:#10b981"></span><span class="ll">AI Agents</span><span class="lc">6</span></label>
+      <label class="lr"><input type="checkbox" id="lyr-gate" checked onchange="toggleLayer('gate',this.checked)"><span class="ld" style="background:#ef4444"></span><span class="ll">Gatekeeper</span><span class="lc">1</span></label>
+      <label class="lr"><input type="checkbox" id="lyr-util" checked onchange="toggleLayer('util',this.checked)"><span class="ld" style="background:#6366f1"></span><span class="ll">Shared Utils</span><span class="lc">1</span></label>
+      <label class="lr"><input type="checkbox" id="lyr-storage" checked onchange="toggleLayer('storage',this.checked)"><span class="ld" style="background:#22c55e"></span><span class="ll">Storage</span><span class="lc">3</span></label>
+    </div>
+    <hr class="div">
+    <div>
+      <div class="sl">Connections</div>
+      <label class="cr"><input type="checkbox" id="ct-data" checked onchange="toggleConn('data',this.checked)"><span class="cl" style="background:#3b82f6"></span><span class="cn">Data flow</span></label>
+      <label class="cr"><input type="checkbox" id="ct-call" checked onchange="toggleConn('call',this.checked)"><span class="cl" style="background:#10b981;border-top:2px dashed #10b981;height:0"></span><span class="cn">Tool call</span></label>
+      <label class="cr"><input type="checkbox" id="ct-read" checked onchange="toggleConn('read',this.checked)"><span class="cl" style="background:#06b6d4"></span><span class="cn">Read-only</span></label>
+      <label class="cr"><input type="checkbox" id="ct-write" checked onchange="toggleConn('write',this.checked)"><span class="cl" style="background:#de7356"></span><span class="cn">Write</span></label>
+      <label class="cr"><input type="checkbox" id="ct-conflict" checked onchange="toggleConn('conflict',this.checked)"><span class="cl" style="background:#f59e0b"></span><span class="cn">Org conflict</span></label>
+    </div>
+    <hr class="div">
+    <div>
+      <div class="sl">Notes (<span id="cmt-count">0</span>)</div>
+      <div id="cmt-list"><div class="no-cmt">Click any node to add a note.</div></div>
+    </div>
+  </div>
+
+  <div id="ctr">
+    <!-- OVERVIEW -->
+    <div class="panel on" id="panel-ov">
+      <div id="svg-wrap">
+        <svg id="diag" width="1060" height="690" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+      <div class="zoom-ctrl">
+        <button class="zb" onclick="zoomIn()">+</button>
+        <button class="zb" onclick="zoomOut()">−</button>
+        <button class="zb" onclick="zoomReset()" title="Reset">⊙</button>
+      </div>
+      <div class="lgnd">
+        <div class="lgnd-r"><span class="lgnd-d" style="background:#3b82f6"></span><span class="lgnd-l">Data flow</span></div>
+        <div class="lgnd-r"><span class="lgnd-d" style="background:#10b981"></span><span class="lgnd-l">Tool call (dashed)</span></div>
+        <div class="lgnd-r"><span class="lgnd-d" style="background:#06b6d4"></span><span class="lgnd-l">Read-only</span></div>
+        <div class="lgnd-r"><span class="lgnd-d" style="background:#de7356"></span><span class="lgnd-l">Write commit</span></div>
+        <div class="lgnd-r"><span class="lgnd-d" style="background:#f59e0b"></span><span class="lgnd-l">Org conflict</span></div>
+      </div>
+    </div>
+
+    <!-- AGENTS -->
+    <div class="panel" id="panel-ag">
+      <div class="ag-grid" id="ag-grid"></div>
+    </div>
+
+    <!-- FLOWS -->
+    <div class="panel" id="panel-fl">
+      <div class="fl-sel">
+        <button class="flb on" onclick="switchFlow('ingest')">🔄 Ingestion Pipeline</button>
+        <button class="flb" onclick="switchFlow('learner')">🎓 Learner Chat</button>
+        <button class="flb" onclick="switchFlow('explainer')">💡 Explainer Chat</button>
+      </div>
+      <div id="flow-ingest" class="fl-box on"></div>
+      <div id="flow-learner" class="fl-box"></div>
+      <div id="flow-explainer" class="fl-box"></div>
+    </div>
+
+    <!-- PKB SCHEMA -->
+    <div class="panel" id="panel-pkb">
+      <div class="pkb-grid" id="pkb-grid"></div>
+    </div>
+
+    <!-- PKC RULES -->
+    <div class="panel" id="panel-pkc">
+      <div class="rules-wrap" id="rules-wrap"></div>
+    </div>
+
+    <!-- DETAIL PANEL -->
+    <div id="dp">
+      <button class="dp-close" onclick="closeDetail()">×</button>
+      <div id="dpc"></div>
+    </div>
+  </div>
+</div>
+
+<div id="pbar">
+  <div id="plbl">Prompt</div>
+  <div id="ptxt">Select any agent node or card to see details. Add notes to generate a discussion prompt.</div>
+  <button id="cpybtn" onclick="copyPrompt()">Copy Prompt</button>
+</div>
+
+<div id="modal-bg" onclick="closeModal(event)">
+  <div id="modal">
+    <h3 id="modal-title">Add Note</h3>
+    <p id="modal-sub">Your note will appear in the prompt output below.</p>
+    <textarea id="modal-ta" placeholder="e.g. Why does the Interviewer stream word-by-word instead of sentence-by-sentence?"></textarea>
+    <div class="modal-btns">
+      <button class="mbtn" onclick="closeModal()">Cancel</button>
+      <button class="mbtn primary" onclick="saveNote()">Save Note</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════
+
+const NODES = [
+  // CLIENT
+  {id:'user-chat',   label:'User Chat',            sub:'Learner / Explainer Mode',     x:40,  y:22, w:130,h:40, layer:'client',  bc:'#3b82f6'},
+  {id:'docs-urls',   label:'Docs & URLs',           sub:'PDF · DOCX · HTML · TXT',      x:210, y:22, w:130,h:40, layer:'client',  bc:'#3b82f6'},
+  {id:'ci-chat',     label:'Central Intelligence',  sub:'Dashboard org-level chat',     x:690, y:22, w:160,h:40, layer:'client',  bc:'#8b5cf6'},
+  // SERVER
+  {id:'routes',      label:'Express Routes',        sub:'server/routes.ts',             x:200, y:118,w:180,h:40, layer:'server',  bc:'#de7356'},
+  // SERVICE
+  {id:'ingestion',   label:'Ingestion Service',     sub:'ingestion-service.ts',         x:440, y:215,w:165,h:40, layer:'service', bc:'#f59e0b'},
+  // AGENTS (write)
+  {id:'interviewer', label:'Product Interviewer',   sub:'product-interviewer.ts',       x:22,  y:318,w:155,h:40, layer:'agent',   bc:'#10b981'},
+  {id:'extractor',   label:'Info Extractor',        sub:'information-extractor.ts',     x:208, y:318,w:155,h:40, layer:'agent',   bc:'#3b82f6'},
+  // AGENT (read)
+  {id:'explainer',   label:'Product Explainer',     sub:'product-explainer.ts',         x:570, y:318,w:155,h:40, layer:'agent',   bc:'#06b6d4'},
+  // AGENTS (post-process)
+  {id:'synthesizer', label:'Product Synthesizer',   sub:'product-synthesizer.ts',       x:22,  y:408,w:155,h:40, layer:'agent',   bc:'#8b5cf6'},
+  {id:'gap-id',      label:'Gap Identifier',        sub:'gap-identifier.ts',            x:208, y:408,w:155,h:40, layer:'agent',   bc:'#f59e0b'},
+  {id:'persona',     label:'Persona Extractor',     sub:'persona-extractor.ts',         x:395, y:408,w:155,h:40, layer:'agent',   bc:'#ec4899'},
+  // GATEKEEPER
+  {id:'pkc',         label:'PKC Curator',           sub:'Validation Gatekeeper (deterministic)', x:208, y:500,w:190,h:40, layer:'gate',    bc:'#ef4444'},
+  // UTIL
+  {id:'base',        label:'Base Agent',            sub:'Shared Utilities',             x:820, y:318,w:130,h:40, layer:'util',    bc:'#6366f1'},
+  // STORAGE
+  {id:'prod-pkb',    label:'Product PKB',           sub:'pkb_store/product_{id}/pkb.json', x:50,  y:600,w:155,h:40, layer:'storage', bc:'#22c55e'},
+  {id:'org-pkb',     label:'Org PKB',               sub:'pkb_store/org_{id}/pkb.json',  x:260, y:600,w:145,h:40, layer:'storage', bc:'#22c55e'},
+  {id:'postgres',    label:'PostgreSQL',            sub:'Products · Conversations',     x:465, y:600,w:150,h:40, layer:'storage', bc:'#22c55e'},
+];
+
+const CONNS = [
+  {from:'user-chat',   to:'routes',      type:'data',     label:'POST /chat · /explain'},
+  {from:'docs-urls',   to:'routes',      type:'data',     label:'POST /upload · /process'},
+  {from:'ci-chat',     to:'routes',      type:'data',     label:'POST /orgs/:id/chat'},
+  {from:'routes',      to:'ingestion',   type:'call',     label:'/process'},
+  {from:'routes',      to:'interviewer', type:'call',     label:'/chat [Learner]'},
+  {from:'routes',      to:'explainer',   type:'call',     label:'/explain · /org/chat'},
+  {from:'ingestion',   to:'extractor',   type:'call',     label:'extractFromMultipleChunks()'},
+  {from:'extractor',   to:'pkc',         type:'data',     label:'ProposedUpdates[]'},
+  {from:'interviewer', to:'pkc',         type:'data',     label:'ProposedUpdates[]'},
+  {from:'routes',      to:'synthesizer', type:'call',     label:'post-ingest'},
+  {from:'routes',      to:'gap-id',      type:'call',     label:'post-ingest'},
+  {from:'routes',      to:'persona',     type:'call',     label:'post-ingest'},
+  {from:'synthesizer', to:'pkc',         type:'data',     label:'DerivedInsights'},
+  {from:'gap-id',      to:'pkc',         type:'data',     label:'Gap[]'},
+  {from:'pkc',         to:'prod-pkb',    type:'write',    label:'commit'},
+  {from:'pkc',         to:'org-pkb',     type:'conflict', label:'org conflicts'},
+  {from:'pkc',         to:'postgres',    type:'write',    label:'confidence_score'},
+  {from:'persona',     to:'prod-pkb',    type:'write',    label:'personas · icps'},
+  {from:'explainer',   to:'prod-pkb',    type:'read',     label:'READ ONLY'},
+  {from:'explainer',   to:'org-pkb',     type:'read',     label:'READ ONLY'},
+  {from:'base',        to:'org-pkb',     type:'read',     label:'loadOrgPKB()'},
+  {from:'base',        to:'prod-pkb',    type:'read',     label:'loadPKB()'},
+];
+
+const CONN_COLORS = {data:'#3b82f6', call:'#10b981', read:'#06b6d4', write:'#de7356', conflict:'#f59e0b'};
+const CONN_DASH   = {data:'', call:'6,3', read:'4,3', write:'', conflict:'8,4'};
+const LAYER_COLORS = {client:'#3b82f6', server:'#de7356', service:'#f59e0b', agent:'#10b981', gate:'#ef4444', util:'#6366f1', storage:'#22c55e'};
+
+const AGENT_DATA = {
+  'user-chat': {
+    name:'Chat Interface', file:'client/src/pages/product-workspace.tsx', layer:'client', color:'#3b82f6',
+    type:'Client Input', kbAccess:'none',
+    role:'Two chat modes — Learner and Explainer. Learner feeds founder answers into the knowledge-building pipeline; Explainer queries stored knowledge for team members.',
+    trigger:'User action in browser',
+    inputs:['User text message','Conversation mode (Learner / Explainer)','Active conversation ID'],
+    outputs:['POST /conversations/:id/chat (Learner)','POST /conversations/:id/explain (Explainer)'],
+    systemPrompt:null,
+    notes:['Mode toggles between Learner and Explainer in the workspace UI','Conversation is personal per user; PKB is shared across team'],
+  },
+  'docs-urls': {
+    name:'Documents & URLs', file:'server/services/ingestion-service.ts', layer:'client', color:'#3b82f6',
+    type:'Client Input + Service', kbAccess:'none',
+    role:'Handles file uploads (PDF, DOCX, TXT, MD) and URL fetching. Extracts raw text, cleans whitespace, chunks to 4000-char segments for the extraction pipeline.',
+    trigger:'POST /api/products/:id/upload · /fetch-url',
+    inputs:['Binary file (multer)', 'URL string'],
+    outputs:['{ text: string, filename: string } per file','{ text, title } per URL'],
+    systemPrompt:null,
+    notes:['PDF: parsed via pdfjs-dist page-by-page','DOCX: parsed via mammoth','URLs: fetched via axios, parsed via cheerio — scripts/nav/footer stripped','Chunking: paragraph-aware split at 4000 chars','crawlWebsite() can spider up to 50 pages 3-deep'],
+  },
+  'ci-chat': {
+    name:'Central Intelligence Chat', file:'/api/organisations/:orgId/chat', layer:'client', color:'#8b5cf6',
+    type:'Client Input', kbAccess:'read orgPKB + all product PKBs',
+    role:'Dashboard-level cross-product chat. Explainer mode only — queries the Organisation PKB plus a roll-up of all product PKBs. Never writes.',
+    trigger:'Dashboard chat bar submit',
+    inputs:['User question','orgId (from URL)'],
+    outputs:['Non-streaming response string via Product Explainer'],
+    systemPrompt:null,
+    notes:['Uses Product Explainer internally','Org PKB as primary context; product PKBs as supplementary','Read-only — no KB writes ever'],
+  },
+  'routes': {
+    name:'Express Routes', file:'server/routes.ts', layer:'server', color:'#de7356',
+    type:'API Gateway', kbAccess:'reads products DB + builds AgentContext',
+    role:'Central router for all API calls. Builds AgentContext from DB records, orchestrates pipeline sequencing (extract → synthesize → gap-identify → persona-extract), streams responses.',
+    trigger:'All HTTP requests',
+    inputs:['HTTP request body/params','JWT user session'],
+    outputs:['Streamed SSE or JSON responses','Calls to all agent functions'],
+    systemPrompt:null,
+    notes:['AgentContext: { orgId, productId, productType, primaryMode }','5 construction sites each do extra DB query for org_id — known tech debt','Old /api/sessions/ routes still exist but are deprecated (do not use)','confidence_score written back to products table after /process'],
+  },
+  'ingestion': {
+    name:'Ingestion Service', file:'server/services/ingestion-service.ts', layer:'service', color:'#f59e0b',
+    type:'Processing Service', kbAccess:'none (pure transform)',
+    role:'Pure text-extraction and chunking service. No AI calls. Reads files, fetches URLs, cleans text, splits into 4000-char chunks ready for the Info Extractor.',
+    trigger:'Called by routes.ts during POST /process',
+    inputs:['File path or URL', 'productId for directory routing'],
+    outputs:['string[] of clean text chunks per source'],
+    systemPrompt:null,
+    notes:['extractTextFromFile(): PDF, DOCX, TXT, MD','fetchUrlContent(): axios + cheerio','cleanText(): normalises whitespace, strips control chars','chunkText(): paragraph-aware, sentence-fallback, 4000 char max'],
+  },
+  'extractor': {
+    name:'Information Extractor', file:'server/agents/information-extractor.ts', layer:'agent', color:'#3b82f6',
+    type:'AI Agent (GPT-4o)', kbAccess:'READ orgPKB · WRITE productPKB via PKC',
+    role:'Parses raw document/URL text into structured PKB facts. Only extracts explicitly stated claims — never infers. Outputs ProposedUpdate[] with evidence quotes and source metadata.',
+    trigger:'Called by ingestion pipeline per text chunk',
+    inputs:['Text chunk string','AgentContext (productType)','sourceRef + sourceType (doc|url)','orgPKB (for disambiguation)'],
+    outputs:['ProposedUpdate[] per chunk','Deduped across all chunks by field_path'],
+    systemPrompt:`You are an expert product analyst that extracts structured facts from product documentation, websites, and other materials.
+
+Your job is to identify and extract factual information about a product and organize it according to the PKB (Product Knowledge Base) schema.
+
+IMPORTANT RULES:
+1. Only extract facts that are EXPLICITLY stated in the text - never infer or assume
+2. Each fact must have supporting evidence from the text
+3. Be conservative - if something is unclear, don't extract it
+4. Focus on the most important facts first
+5. Maintain the exact wording when possible for accuracy
+
+OUTPUT FORMAT:
+Return a JSON object with "facts" array containing extracted facts. Each fact should have:
+- field_path: The path in the PKB schema (e.g., "facts.product_identity.name")
+- value: The extracted value
+- evidence: The exact text snippet that supports this fact
+
+PKB SCHEMA PATHS:
+- facts.product_identity.name / one_liner / category / website
+- facts.value_proposition.primary_problem / top_benefits / why_now
+- facts.target_users.primary_users / secondary_users / not_for
+- facts.use_cases (array of {name, for_user_type, problem_story, outcome})
+- facts.features (array of {name, what_it_does, why_it_matters})
+- facts.pricing.model / range_notes / currency / tiers
+- facts.differentiation.alternatives / why_we_win / where_we_lose
+- facts.proof_assets.case_studies / testimonials / metrics
+- facts.constraints_assumptions.assumptions / known_unknowns
+
+For B2B products, also extract:
+- extensions.b2b.buyer_vs_user.buyers / end_users
+- extensions.b2b.org_fit.industries / company_size / regions
+- extensions.b2b.procurement.sales_cycle / security_compliance / roi_driver
+- extensions.b2b.implementation.integrations / onboarding_time / support_model
+
+For B2C products, also extract:
+- extensions.b2c.user_segments (array of {segment_name, who, why_they_care})
+- extensions.b2c.monetization.model / range_notes
+- extensions.b2c.retention_habits.triggers / loops`,
+    notes:['extractFromMultipleChunks(): loads orgPKB once, iterates chunks','deduplicateUpdates(): merges sources on same field_path across chunks','Quality tag determined by PKC Curator based on source type'],
+  },
+  'interviewer': {
+    name:'Product Interviewer', file:'server/agents/product-interviewer.ts', layer:'agent', color:'#10b981',
+    type:'AI Agent (GPT-4o)', kbAccess:'READ productPKB + orgPKB · WRITE declined_fields direct · WRITE facts via PKC',
+    role:'Conversational agent that interviews founders to fill knowledge gaps. Extracts structured facts from natural language, respects refusals, streams responses word-by-word.',
+    trigger:'POST /conversations/:convId/chat (Learner mode)',
+    inputs:['founderMessage: string','currentGaps: Gap[] from pkb.gaps.current','productPKB + orgPKB','declined_fields list'],
+    outputs:['response: string (streamed)','updates: ProposedUpdate[] → PKC','declinedFields: string[] saved to pkb.meta.inputs'],
+    systemPrompt:`You are a friendly, expert product interviewer helping founders articulate their product knowledge.
+
+Your role is to:
+1. Engage naturally in conversation
+2. Extract structured facts from founder responses
+3. Ask clarifying follow-up questions when needed
+4. Guide the founder to provide complete information
+5. RESPECT when users decline to provide information
+
+CONVERSATION STYLE:
+- Be warm and encouraging
+- Acknowledge their answers before asking more
+- Use their language and terminology
+- Keep questions focused and specific
+- Ask up to 6 questions per response maximum, grouped by topic
+- Group questions into sections with bold headers like **User Base**, **Pricing**, **Features**, etc.
+- Number questions within each section
+- If you have more questions after these, mention it at the end
+- If the user says they don't want to share something, RESPECT that and move on
+
+HANDLING REFUSALS:
+When a user says things like:
+- "I don't want to share that" / "That's confidential" / "Skip this question"
+You MUST:
+1. Acknowledge their decision politely
+2. Mark the field as "declined" in extracted_facts
+3. Move on to other questions without pressuring
+4. Never ask about the declined topic again
+
+OUTPUT FORMAT:
+Return a JSON object with:
+{
+  "extracted_facts": [
+    { "field_path": "...", "value": "...", "evidence": "...", "declined": false }
+  ],
+  "response": "Your conversational response",
+  "follow_up_needed": true/false,
+  "follow_up_question": "Optional follow-up",
+  "user_declined_info": true/false
+}`,
+    notes:['streamInterviewerResponse(): word-by-word with 20ms delay','generateInitialSummary(): called after first ingestion batch, uses INITIAL_SUMMARY_PROMPT','Uses currentGaps to prioritise what questions to ask','Declined fields persisted in pkb.meta.inputs.declined_fields — permanent memory'],
+    extraPrompt:{label:'Initial Summary Prompt',text:`You are a friendly product knowledge assistant. Generate a clean, well-formatted summary of what you learned from the materials.
+
+FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+
+I've processed your materials. Here's my understanding of your product:
+
+**What is it?**
+[1-2 sentences describing the product]
+
+**Who is it for?**
+[1-2 sentences about target users]
+
+**Key value**
+[1-2 sentences about main benefits or value proposition]
+
+---
+
+**To complete my understanding, I have some questions:**
+
+**[Topic 1, e.g., User Base]**
+1. [Question about this topic]
+2. [Another question if needed]
+
+**[Topic 2, e.g., Pricing]**
+3. [Question about this topic]
+
+IMPORTANT RULES:
+- Keep each summary section brief (1-2 sentences max)
+- Ask up to 6 questions maximum, grouped by topic
+- Number questions sequentially across all sections`},
+  },
+  'explainer': {
+    name:'Product Explainer', file:'server/agents/product-explainer.ts', layer:'agent', color:'#06b6d4',
+    type:'AI Agent (GPT-4o)', kbAccess:'READ ONLY — productPKB + orgPKB, no writes ever',
+    role:'Read-only query agent. Answers questions about the product using PKB knowledge. Formats the entire PKB as structured markdown context before each call. Never writes to KB.',
+    trigger:'POST /conversations/:convId/explain · POST /orgs/:orgId/chat',
+    inputs:['question: string','productPKB (formatted via formatPKBForContext)','orgPKB (org context block)','overrideEnabled: boolean','declined_fields list'],
+    outputs:['Streaming text response (streamExplainProduct)','Non-streaming string (explainProduct for /org/chat)'],
+    systemPrompt:`You are an expert product explainer that helps people understand products based on stored knowledge.
+
+You have access to a comprehensive Product Knowledge Base (PKB) containing verified facts and derived insights about a product.
+
+Your role is to:
+1. Answer questions about the product clearly and accurately
+2. Only use information from the PKB - never make things up
+3. Acknowledge when something isn't in your knowledge base
+4. Explain complex concepts in accessible language
+5. Provide relevant examples and context when helpful
+
+COMMUNICATION STYLE:
+- Be helpful and informative
+- Use clear, jargon-free language when possible
+- Structure longer answers with headers or bullets
+- Reference specific features, use cases, or benefits when relevant
+- If asked about something not in the PKB, say so honestly
+
+ANSWER TYPES:
+- For "what is" questions: Give clear, concise explanations
+- For "how does" questions: Walk through processes or features
+- For "who is it for" questions: Describe target users/customers
+- For "why" questions: Explain value propositions and benefits
+- For comparisons: Use differentiation info from PKB
+- For pricing: Share what's known, note if details are limited
+
+HANDLING DECLINED/MISSING INFORMATION:
+If someone asks about information that was explicitly declined:
+- Politely explain "This specific information wasn't provided during the knowledge gathering process"
+- Don't speculate or make up answers
+
+PARTIAL KNOWLEDGE MODE:
+If operating with partial knowledge (override mode):
+- Start responses with an acknowledgment that knowledge may be incomplete
+- Encourage the user to verify critical details with the product owner
+
+IMPORTANT:
+- You represent an outsider's perspective learning about this product
+- Be honest about gaps in knowledge
+- Don't invent features or capabilities not in the PKB`,
+    notes:['formatPKBForContext(): renders all PKB sections as markdown for the prompt','Override mode: adds "IMPORTANT: operating in OVERRIDE MODE" header when confidence < high','PKB is serialised fresh on every call — no caching'],
+  },
+  'synthesizer': {
+    name:'Product Synthesizer', file:'server/agents/product-synthesizer.ts', layer:'agent', color:'#8b5cf6',
+    type:'AI Agent (GPT-4o)', kbAccess:'READ productPKB + orgPKB · WRITE derived_insights ONLY',
+    role:'Reads all PKB facts and generates a structured product brief, confidence score, ICP hypothesis, and storytelling summary. Triggers confidence_score write-back to PostgreSQL.',
+    trigger:'Called by routes.ts after batchApplyUpdates in /process · after /fill-gaps',
+    inputs:['pkb.facts + pkb.extensions snapshot','orgContext block'],
+    outputs:['DerivedInsights → pkb.derived_insights','ProposedUpdate for synthesizer section','confidence_score → PostgreSQL products table'],
+    systemPrompt:`You are an expert product strategist that synthesizes product knowledge into clear, compelling insights.
+
+Your job is to analyze the facts stored in a PKB and generate derived insights that help understand the product holistically.
+
+IMPORTANT RULES:
+1. Base your synthesis ONLY on the facts provided - never make up information
+2. Be honest about confidence levels - don't overstate certainty
+3. If facts are incomplete, acknowledge gaps in your synthesis
+4. Focus on creating actionable, clear insights
+5. Write in a professional but accessible tone
+
+OUTPUT FORMAT:
+Return a JSON object with the following structure:
+{
+  "product_brief": {
+    "simple_summary": "2-3 sentence description",
+    "who_its_for": "Clear description of target users/customers",
+    "why_it_wins": "Key differentiators and competitive advantages",
+    "key_message_pillars": ["pillar1", "pillar2", "pillar3"],
+    "sample_pitch": "A 2-3 sentence elevator pitch"
+  },
+  "confidence": {
+    "level": "low|medium|high",
+    "score": 0-100,
+    "reasons": ["reason1", "reason2"]
+  },
+  "icp_hypothesis": {
+    "b2b_icp_hypothesis": "ICP for B2B (if applicable)",
+    "b2c_segment_hypothesis": "Primary user segment for B2C (if applicable)"
+  },
+  "storytelling_summary": "Detailed narrative summary"
+}
+
+CONFIDENCE SCORING GUIDELINES:
+- HIGH (75-100): Core identity, value prop, target users, pricing, differentiation are all well-defined
+- MEDIUM (40-74): Basic understanding exists but important gaps remain
+- LOW (0-39): Many critical fields are missing or unclear`,
+    notes:['storytelling_summary only generated if confidence != "low"','formatSynthesisForChat(): renders insights as markdown for chat display','confidence_score (0-100) written back to products DB table after synthesis'],
+  },
+  'gap-id': {
+    name:'Gap Identifier', file:'server/agents/gap-identifier.ts', layer:'agent', color:'#f59e0b',
+    type:'AI Agent (GPT-4o)', kbAccess:'READ productPKB + orgPKB · WRITE gaps section ONLY',
+    role:'Analyses PKB completeness and identifies missing or unclear information. Product-type-aware — asks completely different questions for B2B vs B2C. Respects declined fields.',
+    trigger:'Called in /process after Synthesizer · POST /recheck-gaps',
+    inputs:['pkb.facts + pkb.extensions + pkb.meta','declined_fields list','orgContext (suppresses org-level gaps)','productType (b2b|b2c|hybrid)'],
+    outputs:['Gap[] sorted by severity (critical first)','Stored in pkb.gaps.current · history moved to pkb.gaps.history'],
+    systemPrompt:`You are an expert at identifying missing information in product documentation.
+
+CRITICAL: You MUST ask questions appropriate to the product type. Do NOT ask B2B questions for B2C products!
+
+=== B2C PRODUCTS (Consumer-focused) ===
+Ask about CONSUMER topics:
+- Who are the individual USERS/CONSUMERS (age groups, interests, lifestyles)?
+- What consumer problem does it solve (entertainment, convenience, savings, health)?
+- How do INDIVIDUAL USERS discover and use the product?
+- What keeps users coming back (engagement loops, rewards, social features)?
+- How is it monetized (free, freemium, subscription, in-app purchases)?
+- What makes it stand out from consumer alternatives?
+
+DO NOT ask B2C products about: company sizes, industries, sales cycles, buyer personas, enterprise integrations, B2B deals.
+
+=== B2B PRODUCTS (Business-focused) ===
+Ask about BUSINESS topics:
+- What types of COMPANIES/ORGANIZATIONS use it (size, industry)?
+- Who are the BUYERS vs END USERS within organizations?
+- What business problem does it solve (efficiency, revenue, compliance)?
+- What's the typical sales cycle and deal process?
+- What integrations with business tools are available?
+- What's the pricing model for businesses?
+
+=== HYBRID PRODUCTS ===
+Ask questions relevant to the PRIMARY mode first, then secondary mode.
+
+SEVERITY LEVELS:
+- critical: Absolutely essential for understanding the product
+- important: Needed for a complete picture but not blocking
+- nice_to_have: Would enhance understanding but can proceed without
+
+OUTPUT FORMAT:
+Return a JSON object with a "gaps" array. Each gap:
+{
+  "gap_id": "gap_unique_id",
+  "field_path": "the.field.path",
+  "severity": "critical|important|nice_to_have",
+  "question": "A natural language question to ask the founder",
+  "why_needed": "Brief explanation of why this matters"
+}
+
+IMPORTANT:
+- STRICTLY follow product type rules
+- Maximum 10 gaps at a time
+- Don't ask about things already filled
+- Don't ask about DECLINED FIELDS`,
+    notes:['formatGapsForChat(): renders max 5 questions (3 critical + 2 important) in grouped sections','getNextGapQuestions(n): returns top N by severity','Previous gaps archived to pkb.gaps.history on each run','Org context prevents flagging org-level fields (industry, competitors) as product gaps'],
+  },
+  'persona': {
+    name:'Persona Extractor', file:'server/agents/persona-extractor.ts', layer:'agent', color:'#ec4899',
+    type:'AI Agent (GPT-4o)', kbAccess:'READ productPKB + orgPKB (business_model only) · WRITE personas/icps direct',
+    role:'Derives buyer personas and ICPs from PKB signals. Evidence-only — never invents roles not present in the data. Outputs candidates for team confirmation; max 3 active personas enforced upstream.',
+    trigger:'After /process · after /fill-gaps',
+    inputs:['PKB subset: target_users, use_cases, features, value_proposition, differentiation, pricing, proof_assets, extensions','orgPKB.business_model (typing hint)','sessionId'],
+    outputs:['{ persona_candidates: Persona[] (max 6), icp_candidates: ICP[] (max 2) }','Written directly to pkb.personas + pkb.icps'],
+    systemPrompt:`You are an expert product analyst specialising in buyer personas and ideal customer profiles (ICPs).
+
+Given structured product knowledge extracted from founder interviews and documents, your job is to identify persona and ICP signals — not invent them.
+
+RULES:
+1. Only derive personas and ICPs from signals present in the provided PKB content. Do not invent roles, industries, or contexts that are not supported.
+2. Every persona must use one of these five bounded types:
+   - "buyer_persona"     — the person who decides to purchase
+   - "user_persona"      — the person who uses the product day-to-day
+   - "influencer"        — shapes the decision without having budget authority
+   - "economic_buyer"    — controls budget and signs off on spend
+   - "gatekeeper"        — controls access to decision-makers or system (e.g. IT, legal)
+3. Set lifecycle_status to "inferred" on every persona and ICP — nothing is confirmed yet.
+4. Set status to "candidate" on every persona.
+5. Assign confidence (0.0–1.0) based on how strongly the PKB content supports the persona or ICP.
+   Strong explicit signals = 0.7+. Weak or implied signals = 0.3–0.6.
+6. Output at most 6 persona_candidates and at most 2 icp_candidates.
+7. Generate a short slug for persona_id (e.g. "vp-engineering-mid-market") and icp_id.
+
+OUTPUT FORMAT — return only valid JSON:
+{
+  "persona_candidates": [
+    {
+      "persona_id": "slug",
+      "name": "Human-readable label",
+      "type": "buyer_persona | user_persona | influencer | economic_buyer | gatekeeper",
+      "status": "candidate",
+      "context": { "company_stage": [], "company_size": [], "region": [] },
+      "goals": [{ "text": "...", "priority": "high | medium | low" }],
+      "pains": [{ "text": "...", "severity": "high | medium | low" }],
+      "objections": [{ "text": "...", "frequency": "common | occasional" }],
+      "buying_triggers": [],
+      "success_metrics": [],
+      "evidence": [{ "source_id": "pkb", "quote": "exact text", "field_ref": "facts.target_users..." }],
+      "lifecycle_status": "inferred",
+      "confidence": 0.0
+    }
+  ],
+  "icp_candidates": [ ... ]
+}`,
+    notes:['serializePKBForPrompt(): only sends relevant sections (not full PKB)','Max 3 active personas enforced in routes.ts upstream — extractor outputs up to 6 candidates','Governance: team confirms or demotes candidates; never creates manually','Writes directly to productPKB (not via PKC Curator)'],
+  },
+  'pkc': {
+    name:'PKC Curator', file:'server/services/pkc-curator.ts', layer:'gate', color:'#ef4444',
+    type:'Deterministic Gatekeeper (no AI)', kbAccess:'READ + WRITE productPKB · WRITE orgPKB (conflicts only)',
+    role:'The only gate between agents and the PKB. Validates agent write permissions, detects value conflicts, enforces source requirements, wraps facts in FactField format, and triggers org-level conflict detection.',
+    trigger:'Called by batchApplyUpdates() after every agent that produces ProposedUpdate[]',
+    inputs:['ProposedUpdate: { target_section, field_path, value, sources[], metadata.proposed_by }','productId, orgId'],
+    outputs:['PKCDecision: { accepted, reason, conflict_created?, conflict_id? }','Mutates productPKB in place (savePKB)','OrgConflict written to orgPKB.conflicts[]'],
+    systemPrompt:null,
+    notes:[
+      'WRITE PERMISSIONS: extractor → facts/extensions. interviewer → facts/extensions. synthesizer → derived_insights ONLY. gap_identifier → gaps ONLY.',
+      'SOURCE REQUIREMENT: extractor + interviewer must provide sources[] for facts/extensions writes.',
+      'CONFLICT: if existing value !== new value → creates Conflict record + critical gap question → returns accepted:false.',
+      'ORG CONFLICT: checks product fact against org PKB fields (locations, competitors, industry, business_model) → creates OrgConflict.',
+      'QUALITY: doc/url source = "strong", founder source = "ok", no source = "weak".',
+    ],
+  },
+  'base': {
+    name:'Base Agent', file:'server/agents/base-agent.ts', layer:'util', color:'#6366f1',
+    type:'Shared Utility Module (no AI calls directly)', kbAccess:'READ productPKB + orgPKB (loadCombinedContext)',
+    role:'Provides shared infrastructure used by all AI agents: OpenAI client, context loading, org context formatting, LLM call wrappers, and JSON parsing.',
+    trigger:'Imported by all 6 AI agents',
+    inputs:['AgentContext: { orgId, productId, productType, primaryMode? }'],
+    outputs:['callLLM(): awaitable string response','streamLLM(): AsyncGenerator<string>','parseJSONResponse<T>(): T|null','loadCombinedContext(): { orgPKB, productPKB }','buildOrgContext(): formatted string block'],
+    systemPrompt:null,
+    notes:['DEFAULT_MODEL = "gpt-4o"','loadCombinedContext() uses Promise.all() — parallel load of both PKBs','buildOrgContext() omits any field with null/empty value','parseJSONResponse() handles both ```json``` blocks and raw JSON objects'],
+  },
+  'prod-pkb': {
+    name:'Product PKB', file:'pkb_store/product_{id}/pkb.json', layer:'storage', color:'#22c55e',
+    type:'File-based JSON Store', kbAccess:'READ by all agents · WRITE by PKC Curator + Persona Extractor',
+    role:'The core knowledge file for each product. Stores facts, extensions, derived insights, gaps, personas, ICPs, conflicts, and metadata. Snapshotted on every write.',
+    trigger:'Written by savePKB(); read by loadPKB()',
+    inputs:['All PKC Curator commits','Direct persona/icp writes from Persona Extractor'],
+    outputs:['Loaded by loadCombinedContext() for all agents'],
+    systemPrompt:null,
+    notes:['Timestamped snapshots: pkb_store/product_{id}/snapshots/pkb_YYYY-MM-DDTHH-mm-ss.json','V0→V1 lazy upgrade on first access (adds lifecycle_status, sensitive, approved flags)','Not in PostgreSQL — pure filesystem JSON','Concurrent access not protected (single-server assumption)'],
+  },
+  'org-pkb': {
+    name:'Org PKB', file:'pkb_store/org_{id}/pkb.json', layer:'storage', color:'#22c55e',
+    type:'File-based JSON Store', kbAccess:'READ by all agents via buildOrgContext() · WRITE by org routes + conflict detector',
+    role:'Organisation-level shared context. Contains company metadata, competitors, markets, and conflict queue. All agents receive it as a read-only context block prepended to their prompts.',
+    trigger:'loadOrgPKB() auto-initializes if missing',
+    inputs:['Org setup form submission','Document extraction via /orgs/:id/extract','Conflict detection from PKC Curator'],
+    outputs:['buildOrgContext() injection block for all agent prompts','orgPKB.conflicts[] surfaced as org inbox'],
+    systemPrompt:null,
+    notes:['No snapshots — simple flat record edited by admins','Inheritance rule: all agents read it; nothing writes back from product to org automatically','loadOrgPKB() never returns null — creates empty file if missing','Conflict detection fires when product fact contradicts: locations, competitors, industry, or business_model'],
+  },
+  'postgres': {
+    name:'PostgreSQL', file:'server/db.ts · shared/schema.ts', layer:'storage', color:'#22c55e',
+    type:'Relational Database (Drizzle ORM)', kbAccess:'READ/WRITE by routes.ts',
+    role:'Stores structured relational data: users, organisations, products, product_members, conversations, messages. PKB content is NOT in Postgres — only metadata and confidence scores.',
+    trigger:'All CRUD routes',
+    inputs:['Product CRUD','Conversation / message CRUD','confidence_score updates from Synthesizer'],
+    outputs:['AgentContext construction (productType, orgId)','Conversation history for chat UI'],
+    systemPrompt:null,
+    notes:['products.confidence_score updated after /process, /recheck-gaps, /fill-gaps','users.id is UUID (varchar) — NOT integer; product_members.user_id and conversations.user_id are varchar too','organisations + organisation_members tables added in V3','No PKB content in DB — facts live in filesystem JSON only'],
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+
+const state = {
+  tab: 'ov',
+  flow: 'ingest',
+  zoom: 1,
+  layers: {client:true, server:true, service:true, agent:true, gate:true, util:true, storage:true},
+  connTypes: {data:true, call:true, read:true, write:true, conflict:true},
+  selectedNode: null,
+  comments: [],
+  pendingNoteTarget: null,
+};
+
+// ═══════════════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════════════
+
+function switchTab(id) {
+  state.tab = id;
+  document.querySelectorAll('.tb').forEach((b,i)=>b.classList.toggle('on', ['ov','ag','fl','pkb','pkc'][i]===id));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
+  document.getElementById('panel-'+id).classList.add('on');
+  if (id!=='ov') { document.getElementById('dp').classList.remove('open'); state.selectedNode=null; }
+  updatePrompt();
+}
+
+// ═══════════════════════════════════════════════════════════
+// SVG DIAGRAM
+// ═══════════════════════════════════════════════════════════
+
+function nodeById(id){ return NODES.find(n=>n.id===id); }
+
+function drawDiagram() {
+  const svg = document.getElementById('diag');
+  svg.innerHTML='';
+
+  // Defs (arrowheads)
+  const defs = svgEl('defs');
+  Object.entries(CONN_COLORS).forEach(([type,color])=>{
+    const marker = svgEl('marker',{id:`arr-${type}`,markerWidth:'8',markerHeight:'6',refX:'7',refY:'3',orient:'auto'});
+    marker.appendChild(svgEl('polygon',{points:'0 0,8 3,0 6',fill:color}));
+    defs.appendChild(marker);
+  });
+  svg.appendChild(defs);
+
+  // Connections first (behind nodes)
+  const connG = svgEl('g',{id:'conn-group'});
+  svg.appendChild(connG);
+
+  // Nodes
+  const nodeG = svgEl('g',{id:'node-group'});
+  svg.appendChild(nodeG);
+
+  renderConnections(connG);
+  renderNodes(nodeG);
+}
+
+function renderConnections(g) {
+  g.innerHTML='';
+  CONNS.forEach(conn=>{
+    if (!state.connTypes[conn.type]) return;
+    const src = nodeById(conn.from);
+    const dst = nodeById(conn.to);
+    if (!src||!dst) return;
+    if (!state.layers[src.layer]||!state.layers[dst.layer]) return;
+
+    const color = CONN_COLORS[conn.type];
+    const dash  = CONN_DASH[conn.type];
+
+    // Calculate path
+    const sx = src.x + src.w/2, sy = src.y + src.h;
+    const dx = dst.x + dst.w/2, dy = dst.y;
+    const mY = (sy+dy)/2;
+    const path = `M ${sx} ${sy} C ${sx} ${mY} ${dx} ${mY} ${dx} ${dy}`;
+
+    const el = svgEl('path',{
+      d: path,
+      fill:'none',
+      stroke: color,
+      'stroke-width':'1.5',
+      'stroke-dasharray': dash,
+      'marker-end':`url(#arr-${conn.type})`,
+      opacity:'0.7',
+    });
+    g.appendChild(el);
+
+    // Label at midpoint
+    if (conn.label) {
+      const lx = (sx+dx)/2, ly = mY;
+      const bg = svgEl('rect',{x:lx-36,y:ly-8,width:'72',height:'14',rx:'3',fill:'#080a0c',opacity:'0.85'});
+      const lbl = svgEl('text',{x:lx,y:ly+3,'text-anchor':'middle','font-size':'8','fill':color,'font-family':'system-ui'});
+      lbl.textContent = conn.label;
+      g.appendChild(bg);
+      g.appendChild(lbl);
+    }
+  });
+}
+
+function renderNodes(g) {
+  g.innerHTML='';
+  NODES.forEach(n=>{
+    if (!state.layers[n.layer]) return;
+    const isSelected = state.selectedNode===n.id;
+    const hasCmt = state.comments.some(c=>c.target===n.id);
+
+    const grp = svgEl('g',{'class':'svg-node','data-id':n.id,'cursor':'pointer'});
+    grp.addEventListener('click',()=>selectNode(n.id));
+
+    // Shadow/glow
+    if (isSelected) {
+      grp.appendChild(svgEl('rect',{x:n.x-2,y:n.y-2,width:n.w+4,height:n.h+4,rx:'9',fill:'none',stroke:n.bc,'stroke-width':'2',opacity:'0.6'}));
+    }
+
+    // Node background
+    grp.appendChild(svgEl('rect',{
+      x:n.x,y:n.y,width:n.w,height:n.h,rx:'7',
+      fill:'#0d1014',
+      stroke: isSelected ? n.bc : (hasCmt ? '#de7356' : '#1c2028'),
+      'stroke-width': isSelected||hasCmt ? '1.5':'1',
+    }));
+
+    // Left accent bar
+    grp.appendChild(svgEl('rect',{x:n.x,y:n.y,width:'3',height:n.h,rx:'3',fill:n.bc,opacity:'0.9'}));
+
+    // Label
+    const lbl = svgEl('text',{x:n.x+11,y:n.y+15,'font-size':'11','font-weight':'700','fill':'#e0e4e8','font-family':'system-ui'});
+    lbl.textContent = n.label;
+    grp.appendChild(lbl);
+
+    // Subtitle
+    const sub = svgEl('text',{x:n.x+11,y:n.y+28,'font-size':'9','fill':'#3a4a58','font-family':'Courier New,monospace'});
+    sub.textContent = n.sub;
+    grp.appendChild(sub);
+
+    // Comment indicator
+    if (hasCmt) {
+      const dot = svgEl('circle',{cx:n.x+n.w-8,cy:n.y+8,r:'4',fill:'#de7356'});
+      grp.appendChild(dot);
+    }
+
+    g.appendChild(grp);
+  });
+}
+
+function svgEl(tag, attrs={}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg',tag);
+  Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));
+  return el;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ZOOM
+// ═══════════════════════════════════════════════════════════
+
+function applyZoom() {
+  document.getElementById('diag').style.transform = `scale(${state.zoom})`;
+  document.getElementById('diag').style.transformOrigin = 'top left';
+}
+function zoomIn()    { state.zoom = Math.min(2,   state.zoom+0.15); applyZoom(); }
+function zoomOut()   { state.zoom = Math.max(0.4, state.zoom-0.15); applyZoom(); }
+function zoomReset() { state.zoom=1; applyZoom(); }
+
+// ═══════════════════════════════════════════════════════════
+// NODE SELECTION + DETAIL PANEL
+// ═══════════════════════════════════════════════════════════
+
+function selectNode(id) {
+  state.selectedNode = id;
+  renderNodes(document.getElementById('node-group'));
+  openDetail(id);
+  updatePrompt();
+}
+
+function openDetail(id) {
+  const data = AGENT_DATA[id];
+  if (!data) return;
+  const dp = document.getElementById('dp');
+  const dpc = document.getElementById('dpc');
+  dp.classList.add('open');
+
+  const kbClass = {
+    'READ ONLY — productPKB + orgPKB, no writes ever':'kb-r',
+    'READ productPKB + orgPKB · WRITE derived_insights ONLY':'kb-rw',
+    'READ productPKB + orgPKB · WRITE facts via PKC Curator':'kb-rw',
+    'READ productPKB + orgPKB · WRITE declined_fields direct · WRITE facts via PKC':'kb-rw',
+    'READ + WRITE productPKB · WRITE orgPKB (conflicts only)':'kb-rw',
+    'READ by all agents · WRITE by PKC Curator + Persona Extractor':'kb-rw',
+    'none':'kb-n',
+  };
+  const kbCls = kbClass[data.kbAccess] || (data.kbAccess.startsWith('READ ONLY') ? 'kb-r' : data.kbAccess==='none' ? 'kb-n' : 'kb-rw');
+
+  const inList  = (data.inputs||[]).map(i=>`<li>${esc(i)}</li>`).join('');
+  const outList = (data.outputs||[]).map(o=>`<li>${esc(o)}</li>`).join('');
+  const noteList= (data.notes||[]).map(n=>`<li>${esc(n)}</li>`).join('');
+
+  const promptBlock = data.systemPrompt ? `
+    <div class="dp-sec">
+      <h4>System Prompt</h4>
+      <button class="pt" onclick="togglePrompt(this)">View full system prompt &nbsp;<span class="arr">▶</span></button>
+      <div class="pb">${esc(data.systemPrompt)}</div>
+    </div>` : '';
+
+  const extraBlock = data.extraPrompt ? `
+    <div class="dp-sec">
+      <button class="pt" onclick="togglePrompt(this)">${esc(data.extraPrompt.label)} &nbsp;<span class="arr">▶</span></button>
+      <div class="pb">${esc(data.extraPrompt.text)}</div>
+    </div>` : '';
+
+  dpc.innerHTML = `
+    <div class="dp-badge" style="background:${data.color}22;color:${data.color}">${data.type}</div>
+    <div class="dp-title">${esc(data.name)}</div>
+    <div class="dp-file">${esc(data.file)}</div>
+    <div class="dp-sec">
+      <h4>Role</h4>
+      <p>${esc(data.role)}</p>
+    </div>
+    <div class="dp-sec">
+      <h4>KB Access</h4>
+      <span class="kb-tag ${kbCls}">${esc(data.kbAccess)}</span>
+    </div>
+    ${data.trigger ? `<div class="dp-sec"><h4>Trigger</h4><p>${esc(data.trigger)}</p></div>` : ''}
+    ${inList ? `<div class="dp-sec"><h4>Inputs</h4><ul>${inList}</ul></div>` : ''}
+    ${outList ? `<div class="dp-sec"><h4>Outputs</h4><ul>${outList}</ul></div>` : ''}
+    ${promptBlock}
+    ${extraBlock}
+    ${noteList ? `<div class="dp-sec"><h4>Notes</h4><ul>${noteList}</ul></div>` : ''}
+    <button class="add-cmt-btn" onclick="openModal('${id}')">+ Add note about this component</button>
+  `;
+}
+
+function closeDetail() {
+  document.getElementById('dp').classList.remove('open');
+  state.selectedNode=null;
+  renderNodes(document.getElementById('node-group'));
+}
+
+function togglePrompt(btn) {
+  btn.classList.toggle('open');
+  btn.nextElementSibling.classList.toggle('open');
+}
+
+// ═══════════════════════════════════════════════════════════
+// LAYER / CONN TOGGLES + PRESETS
+// ═══════════════════════════════════════════════════════════
+
+function toggleLayer(layer, val) {
+  state.layers[layer]=val;
+  renderConnections(document.getElementById('conn-group'));
+  renderNodes(document.getElementById('node-group'));
+  updatePrompt();
+}
+function toggleConn(type, val) {
+  state.connTypes[type]=val;
+  renderConnections(document.getElementById('conn-group'));
+}
+function setLayerCheck(layer, val) {
+  document.getElementById('lyr-'+layer).checked=val;
+  state.layers[layer]=val;
+}
+function setConnCheck(type, val) {
+  document.getElementById('ct-'+type).checked=val;
+  state.connTypes[type]=val;
+}
+function applyPreset(name) {
+  document.querySelectorAll('.ps').forEach(b=>b.classList.remove('on'));
+  event.target.classList.add('on');
+  if (name==='all') {
+    Object.keys(state.layers).forEach(l=>setLayerCheck(l,true));
+    Object.keys(state.connTypes).forEach(t=>setConnCheck(t,true));
+  } else if (name==='ingest') {
+    ['client','server','service','agent','gate','storage'].forEach(l=>setLayerCheck(l,true));
+    setLayerCheck('util',false);
+    Object.keys(state.connTypes).forEach(t=>setConnCheck(t,true));
+  } else if (name==='chat') {
+    ['client','server','agent','storage'].forEach(l=>setLayerCheck(l,true));
+    ['service','util'].forEach(l=>setLayerCheck(l,false));
+    setLayerCheck('gate',true);
+    Object.keys(state.connTypes).forEach(t=>setConnCheck(t,true));
+  } else if (name==='agents') {
+    setLayerCheck('agent',true); setLayerCheck('gate',true); setLayerCheck('util',true);
+    ['client','server','service','storage'].forEach(l=>setLayerCheck(l,false));
+    Object.keys(state.connTypes).forEach(t=>setConnCheck(t,true));
+  }
+  renderConnections(document.getElementById('conn-group'));
+  renderNodes(document.getElementById('node-group'));
+  updatePrompt();
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMMENTS / NOTES
+// ═══════════════════════════════════════════════════════════
+
+function openModal(targetId) {
+  state.pendingNoteTarget = targetId;
+  const node = NODES.find(n=>n.id===targetId);
+  document.getElementById('modal-title').textContent = 'Add Note: '+( node?.label || targetId );
+  document.getElementById('modal-ta').value='';
+  document.getElementById('modal-bg').classList.add('open');
+  setTimeout(()=>document.getElementById('modal-ta').focus(),100);
+}
+function closeModal(e) {
+  if (e && e.target!==document.getElementById('modal-bg')) return;
+  document.getElementById('modal-bg').classList.remove('open');
+}
+function saveNote() {
+  const text = document.getElementById('modal-ta').value.trim();
+  if (!text) return;
+  const node = NODES.find(n=>n.id===state.pendingNoteTarget);
+  state.comments.push({ id:Date.now(), target:state.pendingNoteTarget, label:node?.label||state.pendingNoteTarget, text });
+  document.getElementById('modal-bg').classList.remove('open');
+  renderComments();
+  renderNodes(document.getElementById('node-group'));
+  updatePrompt();
+}
+function deleteNote(id) {
+  state.comments = state.comments.filter(c=>c.id!==id);
+  renderComments();
+  renderNodes(document.getElementById('node-group'));
+  updatePrompt();
+}
+function renderComments() {
+  const list = document.getElementById('cmt-list');
+  document.getElementById('cmt-count').textContent = state.comments.length;
+  if (!state.comments.length) {
+    list.innerHTML='<div class="no-cmt">Click any node to add a note.</div>';
+    return;
+  }
+  list.innerHTML = state.comments.map(c=>`
+    <div class="cmt-item">
+      <div class="cmt-hd"><span class="cmt-nm">${esc(c.label)}</span><button class="cmt-del" onclick="deleteNote(${c.id})">×</button></div>
+      <div class="cmt-tx">${esc(c.text)}</div>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// PROMPT OUTPUT
+// ═══════════════════════════════════════════════════════════
+
+function updatePrompt() {
+  const parts = [];
+  parts.push('Reviewing the Orchestral-AI multi-agent architecture.');
+  if (state.selectedNode) {
+    const d = AGENT_DATA[state.selectedNode];
+    if (d) parts.push(`Currently examining: ${d.name} (${d.type}) — ${d.role.substring(0,80)}...`);
+  }
+  const visLayers = Object.entries(state.layers).filter(([,v])=>v).map(([k])=>k);
+  if (visLayers.length < Object.keys(state.layers).length) {
+    parts.push(`Visible layers: ${visLayers.join(', ')}.`);
+  }
+  if (state.comments.length) {
+    parts.push('\nNotes on specific components:');
+    state.comments.forEach(c=>{ parts.push(`\n• ${c.label}: ${c.text}`); });
+  }
+  if (!state.comments.length && !state.selectedNode) {
+    parts[0] = 'Select any agent node or card to see details. Add notes to generate a discussion prompt.';
+  }
+  document.getElementById('ptxt').textContent = parts.join(' ');
+}
+
+function copyPrompt() {
+  navigator.clipboard.writeText(document.getElementById('ptxt').textContent);
+  const btn = document.getElementById('cpybtn');
+  btn.textContent='Copied!'; btn.classList.add('done');
+  setTimeout(()=>{ btn.textContent='Copy Prompt'; btn.classList.remove('done'); },1800);
+}
+
+// ═══════════════════════════════════════════════════════════
+// AGENTS GRID
+// ═══════════════════════════════════════════════════════════
+
+function buildAgentGrid() {
+  const grid = document.getElementById('ag-grid');
+  const agents = Object.values(AGENT_DATA);
+  grid.innerHTML = agents.map(a=>{
+    const hasPmt = !!a.systemPrompt;
+    const kbR = a.kbAccess.includes('READ');
+    const kbW = a.kbAccess.includes('WRITE');
+    const isStream = a.notes && a.notes.some(n=>n.toLowerCase().includes('stream'));
+    return `<div class="ag-card" style="border-left-color:${a.color}" onclick="showAgentDetail('${Object.keys(AGENT_DATA).find(k=>AGENT_DATA[k]===a)}')">
+      <div class="ag-name">${esc(a.name)}</div>
+      <div class="ag-file">${esc(a.file)}</div>
+      <div class="ag-role">${esc(a.role.substring(0,140))}${a.role.length>140?'…':''}</div>
+      <div class="ag-tags">
+        ${a.trigger?`<span class="tag t-trig">Trigger</span>`:''}
+        ${kbR&&!kbW?`<span class="tag t-read">READ only</span>`:''}
+        ${kbW?`<span class="tag t-write">WRITE</span>`:''}
+        ${kbR&&kbW?`<span class="tag t-read">READ</span>`:''}
+        ${isStream?`<span class="tag t-stream">Streaming</span>`:''}
+        ${hasPmt?`<span class="tag t-util">Has System Prompt</span>`:''}
+        ${a.type.includes('Gatekeeper')?`<span class="tag t-gate">No LLM</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function showAgentDetail(id) {
+  document.querySelectorAll('.ag-card').forEach((c,i)=>c.classList.toggle('sel', Object.keys(AGENT_DATA)[i]===id));
+  state.selectedNode=id;
+  openDetail(id);
+  updatePrompt();
+}
+
+// ═══════════════════════════════════════════════════════════
+// DATA FLOWS
+// ═══════════════════════════════════════════════════════════
+
+function switchFlow(id) {
+  state.flow=id;
+  document.querySelectorAll('.flb').forEach((b,i)=>b.classList.toggle('on',['ingest','learner','explainer'][i]===id));
+  document.querySelectorAll('.fl-box').forEach(b=>b.classList.remove('on'));
+  document.getElementById('flow-'+id).classList.add('on');
+}
+
+function chip(label, color) {
+  return `<span class="agent-chip" style="background:${color}22;color:${color}">${label}</span>`;
+}
+
+function buildFlows() {
+  // INGESTION PIPELINE
+  document.getElementById('flow-ingest').innerHTML = `
+    <div class="fl-title">🔄 Ingestion Pipeline — POST /api/products/:id/process</div>
+    ${step(1,'User triggers /process','Routes.ts receives the request, loads the product from PostgreSQL, builds AgentContext: <code>{ orgId, productId, productType, primaryMode }</code>.',
+      'POST /api/products/:productId/process')}
+    ${step(2,'Text extraction','For each pending document or URL in pkb.meta.inputs, the Ingestion Service extracts raw text: PDF (pdfjs-dist), DOCX (mammoth), HTML (cheerio), or plain text.',
+      'extractTextFromFile() · fetchUrlContent()')}
+    ${step(3,'Text cleaning & chunking','cleanText() normalises whitespace. chunkText() splits into ≤4000-char paragraph-aware segments to fit LLM context windows.',
+      'cleanText() → chunkText(maxChunkSize=4000)')}
+    ${step(4,'Information Extraction '+chip('Info Extractor','#3b82f6'),'Each chunk is sent to the Info Extractor with the org context injected. The LLM identifies explicit facts mapped to PKB field paths with evidence quotes. Chunks are deduplicated by field_path across the batch.',
+      'extractFromMultipleChunks() → ProposedUpdate[]')}
+    ${step(5,'PKC Validation & Commit '+chip('PKC Curator','#ef4444'),'batchApplyUpdates() runs every ProposedUpdate through the curator: checks agent write permissions, requires source evidence, detects value conflicts, wraps in FactField, saves to productPKB. Also fires org-conflict detection.',
+      'validateProposedUpdate() → applyProposedUpdate() → savePKB()')}
+    ${step(6,'Product Synthesis '+chip('Synthesizer','#8b5cf6'),'Reads the now-updated PKB and generates: product brief, confidence score (0–100), ICP hypothesis, storytelling summary. Writes to pkb.derived_insights. confidence_score also written to PostgreSQL products table.',
+      'synthesizeProductKnowledge() → pkb.derived_insights + DB confidence_score')}
+    ${step(7,'Gap Identification '+chip('Gap Identifier','#f59e0b'),'Analyses PKB completeness. Asks B2B or B2C questions exclusively depending on productType. Returns up to 10 gaps sorted by severity. Previous gaps archived to pkb.gaps.history.',
+      'identifyGaps() → pkb.gaps.current')}
+    ${step(8,'Persona Extraction '+chip('Persona Extractor','#ec4899'),'Derives buyer personas and ICPs from PKB signals. Outputs up to 6 persona_candidates and 2 icp_candidates with lifecycle_status="inferred". Written directly to pkb.personas and pkb.icps.',
+      'extractPersonasFromPKB() → pkb.personas · pkb.icps')}
+    ${step(9,'Initial Summary '+chip('Interviewer','#10b981'),'generateInitialSummary() is called on first ingestion. Uses the INITIAL_SUMMARY_PROMPT to produce a formatted "here\'s what I learned + questions" message that starts the Learner chat.',
+      'generateInitialSummary() → first message in conversation')}
+  `;
+
+  // LEARNER CHAT
+  document.getElementById('flow-learner').innerHTML = `
+    <div class="fl-title">🎓 Learner Chat — POST /api/products/:id/conversations/:convId/chat</div>
+    ${step(1,'User sends message','The founder types a response to a gap question (or any message). The UI posts it to the Learner chat endpoint.',
+      'POST /conversations/:convId/chat')}
+    ${step(2,'Context loading','Routes.ts loads the product (productType, orgId), builds AgentContext, loads current gaps from pkb.gaps.current, and loads declined_fields from pkb.meta.inputs.declined_fields.',
+      'loadProduct() → loadPKB() → pkb.gaps.current')}
+    ${step(3,'Interviewer processes '+chip('Interviewer','#10b981'),'processFounderResponse() receives the message, current gaps, PKB state, and org context. The LLM extracts structured facts and generates a conversational reply. Max 6 questions per response, grouped by topic.',
+      'processFounderResponse(context, message, currentGaps)')}
+    ${step(4,'Fact extraction','For each extracted_fact in the response: non-declined facts become ProposedUpdates; declined facts are appended to pkb.meta.inputs.declined_fields (persisted permanently — system never asks again).',
+      'extracted_facts → ProposedUpdate[] · declined → pkb.meta.inputs')}
+    ${step(5,'PKC commit '+chip('PKC Curator','#ef4444'),'batchApplyUpdates() validates and commits each ProposedUpdate. Conflict detection: if the new value differs from an existing value, a Conflict record is created and a critical gap question is added.',
+      'batchApplyUpdates() → PKC validation → savePKB()')}
+    ${step(6,'Response streaming','The interviewer\'s response text is streamed word-by-word to the client with 20ms delay per word via streamInterviewerResponse(). The updates are sent in the final "done" event.',
+      'streamInterviewerResponse() → SSE word chunks')}
+    ${step(7,'Post-fill re-analysis (fill-gaps only)','After POST /fill-gaps (not every chat), the system re-runs: Gap Identifier, Synthesizer, and Persona Extractor to refresh gaps, confidence, and personas.',
+      'identifyGaps() + synthesizeProductKnowledge() + extractPersonasFromPKB()')}
+  `;
+
+  // EXPLAINER CHAT
+  document.getElementById('flow-explainer').innerHTML = `
+    <div class="fl-title">💡 Explainer Chat — POST /api/products/:id/conversations/:convId/explain</div>
+    ${step(1,'User sends question','A team member asks about the product. The UI posts to the Explainer endpoint. No knowledge building — purely query mode.',
+      'POST /conversations/:convId/explain')}
+    ${step(2,'Context loading','Routes.ts loads product, builds AgentContext, checks if overrideEnabled (allows query even when confidence is low).',
+      'loadProduct() → AgentContext + overrideEnabled flag')}
+    ${step(3,'PKB formatting '+chip('Explainer','#06b6d4'),'formatPKBForContext() serialises the entire productPKB into structured markdown sections (Product Overview, Identity, Value Prop, Target Users, Use Cases, Features, Pricing, Differentiation, Synthesized Insights, B2B/B2C Details).',
+      'formatPKBForContext() → markdown string')}
+    ${step(4,'Org context injection','buildOrgContext() prepends organisation metadata (name, industry, competitors, markets, business_model) to the user prompt with label "ORGANISATION CONTEXT (highest priority)".',
+      'buildOrgContext(orgPKB) → injected as highest-priority context')}
+    ${step(5,'LLM call','streamExplainProduct() calls the LLM with the formatted PKB + org context + question. If overrideEnabled and confidence is not "high", an OVERRIDE MODE disclaimer is prepended.',
+      'streamLLM(EXPLAINER_SYSTEM_PROMPT, userPrompt) → AsyncGenerator<string>')}
+    ${step(6,'Streaming response','Chunks stream directly to the client as they arrive from OpenAI. NO writes to KB at any point — this path is 100% read-only.',
+      'for await (chunk of streamLLM) yield chunk → SSE → client')}
+    ${step(7,'Central Intelligence (org chat variant)','POST /orgs/:orgId/chat uses explainProduct() (non-streaming) with the org PKB as primary context plus a roll-up of all product PKBs the user can access.',
+      'explainProduct() → single JSON response { response }')}
+  `;
+}
+
+function step(n, title, desc, code) {
+  return `<div class="step">
+    <div class="sn">${n}</div>
+    <div class="sc">
+      <div class="st">${title}</div>
+      <div class="sd">${desc}</div>
+      ${code?`<div class="sc-code">${esc(code)}</div>`:''}
+    </div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PKB SCHEMA
+// ═══════════════════════════════════════════════════════════
+
+function buildPKBSchema() {
+  const sections = [
+    { sect:'pkb.meta', fields:[
+      ['product_name','string','Product display name'],
+      ['product_type','"b2b" | "b2c" | "hybrid"','Set once at product creation'],
+      ['primary_mode','"b2b" | "b2c"','For hybrid products'],
+      ['inputs.documents','string[]','Processed document filenames'],
+      ['inputs.urls','string[]','Processed URLs'],
+      ['inputs.declined_fields','string[]','Fields user refused to answer — never re-asked'],
+      ['created_at','ISO timestamp',''],
+    ]},
+    { sect:'pkb.facts', fields:[
+      ['product_identity.name','FactField<string>',''],
+      ['product_identity.one_liner','FactField<string>',''],
+      ['product_identity.category','FactField<string>',''],
+      ['product_identity.website','FactField<string>',''],
+      ['value_proposition.primary_problem','FactField<string>',''],
+      ['value_proposition.top_benefits','FactField<string[]>',''],
+      ['value_proposition.why_now','FactField<string>',''],
+      ['target_users.primary_users','FactField<string[]>',''],
+      ['target_users.secondary_users','FactField<string[]>',''],
+      ['target_users.not_for','FactField<string[]>',''],
+      ['use_cases','FactField<UseCase>[]','{ name, for_user_type, problem_story, outcome }'],
+      ['features','FactField<Feature>[]','{ name, what_it_does, why_it_matters }'],
+      ['pricing.model / range_notes / tiers','FactField','Sensitive — requires approval'],
+      ['differentiation.alternatives / why_we_win / where_we_lose','FactField',''],
+      ['proof_assets.case_studies / testimonials / metrics','FactField',''],
+      ['constraints_assumptions.assumptions / known_unknowns','FactField',''],
+    ]},
+    { sect:'FactField (per-fact envelope)', fields:[
+      ['value','any','The actual fact value'],
+      ['sources','Source[]','source_type: "doc"|"url"|"founder" · source_ref · evidence quote · captured_at'],
+      ['quality_tag','"strong"|"ok"|"weak"','doc/url=strong · founder=ok · none=weak'],
+      ['lifecycle_status','"asserted"|"evidenced"|"inferred"|"disputed"|"stale"','Governance state machine'],
+      ['sensitive','boolean','Pricing, customer names, security claims, roadmap'],
+      ['approved','boolean','Auto-true for non-sensitive; false for sensitive (requires human)'],
+      ['locked','boolean','Prevents overwrite'],
+      ['do_not_ask','boolean','Suppresses gap questions for this field'],
+      ['last_verified','ISO timestamp','Used for staleness detection'],
+      ['audit_trail','AuditEntry[]','Full mutation history'],
+    ]},
+    { sect:'pkb.extensions.b2b', fields:[
+      ['buyer_vs_user.buyers','FactField<string[]>','Who buys (economic buyer)'],
+      ['buyer_vs_user.end_users','FactField<string[]>','Who uses day-to-day'],
+      ['org_fit.industries / company_size / regions','FactField',''],
+      ['procurement.sales_cycle / security_compliance / roi_driver','FactField',''],
+      ['implementation.integrations / onboarding_time / support_model','FactField',''],
+    ]},
+    { sect:'pkb.extensions.b2c', fields:[
+      ['user_segments','{ segment_name, who, why_they_care }[]','Consumer personas'],
+      ['monetization.model / range_notes','FactField','Freemium, subscription, in-app etc.'],
+      ['retention_habits.triggers / loops','FactField<string[]>','Engagement hooks'],
+    ]},
+    { sect:'pkb.derived_insights', fields:[
+      ['product_brief.simple_summary / who_its_for / why_it_wins / sample_pitch','string','Written by Synthesizer'],
+      ['product_brief.key_message_pillars','string[]',''],
+      ['confidence.level','"low"|"medium"|"high"',''],
+      ['confidence.score','0–100','Written to PostgreSQL products table too'],
+      ['confidence.reasons','string[]',''],
+      ['icp_hypothesis.b2b_icp_hypothesis','string',''],
+      ['icp_hypothesis.b2c_segment_hypothesis','string',''],
+      ['storytelling_summary','string','Only if confidence ≠ low'],
+    ]},
+    { sect:'pkb.gaps', fields:[
+      ['current','Gap[]','Latest analysis: { gap_id, field_path, severity, question, why_needed }'],
+      ['history','{ timestamp, gaps[] }[]','Archived previous gap runs'],
+    ]},
+    { sect:'pkb.personas + pkb.icps', fields:[
+      ['personas[].persona_id','slug string','e.g. "vp-engineering-mid-market"'],
+      ['personas[].type','"buyer_persona"|"user_persona"|"influencer"|"economic_buyer"|"gatekeeper"','5 bounded types'],
+      ['personas[].status','"candidate"|"active"|"demoted"','Team-confirmed'],
+      ['personas[].lifecycle_status','"inferred"|"confirmed"|"demoted"',''],
+      ['personas[].confidence','0.0–1.0','Signal strength from PKB'],
+      ['personas[].evidence','{ source_id, quote, field_ref }[]','Evidence citations'],
+      ['icps[].firmographics','{ company_size, industries, geography }','B2B ICP'],
+      ['icps[].technographics','{ must_have_integrations, deployment_preferences }',''],
+    ]},
+    { sect:'pkb.conflicts (product-level)', fields:[
+      ['conflict_id','UUID',''],
+      ['field_path','string','Which fact has competing values'],
+      ['value_a / value_b','any','Competing values'],
+      ['source_a / source_b','Source','Where each came from'],
+      ['resolution_status','"unresolved"|"resolved"',''],
+      ['resolved_at','ISO timestamp',''],
+    ]},
+  ];
+
+  document.getElementById('pkb-grid').innerHTML = sections.map(s=>`
+    <div class="pkb-card">
+      <div class="pkb-sect">${esc(s.sect)}</div>
+      <div class="pkb-field">${s.fields.map(([k,t,c])=>
+        `<div><span class="k">${esc(k)}</span>: <span class="t">${esc(t)}</span>${c?` <span class="c">// ${esc(c)}</span>`:''}</div>`
+      ).join('')}</div>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// PKC RULES
+// ═══════════════════════════════════════════════════════════
+
+function buildPKCRules() {
+  const wrap = document.getElementById('rules-wrap');
+  wrap.innerHTML = `
+    <div class="rule-card">
+      <div class="rule-title">Write Permission Matrix — which agent can write to which PKB section</div>
+      <table class="rt">
+        <tr><th>Agent</th><th>facts</th><th>extensions.b2b</th><th>extensions.b2c</th><th>derived_insights</th><th>gaps</th></tr>
+        <tr><td>extractor</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="no">✗</td><td class="no">✗</td></tr>
+        <tr><td>interviewer</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="no">✗</td><td class="no">✗</td></tr>
+        <tr><td>synthesizer</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="ok">✓</td><td class="no">✗</td></tr>
+        <tr><td>gap_identifier</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td><td class="ok">✓</td></tr>
+        <tr><td>persona extractor</td><td colspan="5" class="warn">Writes directly to pkb.personas / pkb.icps (bypasses PKC — no ProposedUpdate)</td></tr>
+        <tr><td>explainer</td><td colspan="5" class="no">✗ READ ONLY — never produces any writes</td></tr>
+      </table>
+    </div>
+    <div class="rule-card">
+      <div class="rule-title">Source Requirement — extractor + interviewer must include sources[] for fact/extension writes</div>
+      <table class="rt">
+        <tr><th>Source Type</th><th>Quality Tag</th><th>Requirements</th></tr>
+        <tr><td class="mono">doc</td><td class="ok">strong</td><td>Must have source_ref (filename). Evidence quote recommended.</td></tr>
+        <tr><td class="mono">url</td><td class="ok">strong</td><td>Must have source_ref (URL). Evidence quote recommended.</td></tr>
+        <tr><td class="mono">founder</td><td class="warn">ok</td><td>Must have source_ref (session ID). Evidence = exact quote from founder.</td></tr>
+        <tr><td>(none)</td><td class="no">weak</td><td>Synthesizer/gap_identifier writes skip source check (they're derived, not sourced).</td></tr>
+      </table>
+    </div>
+    <div class="rule-card">
+      <div class="rule-title">Conflict Detection — fires when an incoming value differs from an existing value</div>
+      <table class="rt">
+        <tr><th>Condition</th><th>Action</th><th>Result</th></tr>
+        <tr><td>New value !== existing value (same field_path)</td><td>Create Conflict record in pkb.conflicts[]</td><td>ProposedUpdate rejected (accepted: false). Critical gap question added asking founder to resolve.</td></tr>
+        <tr><td>Product fact contradicts Org PKB field</td><td>Create OrgConflict in orgPKB.conflicts[]</td><td>Surfaces in org inbox. Product fact still committed. Admin can update org PKB or dismiss.</td></tr>
+        <tr><td>Org conflict field mapping</td><td colspan="2">facts.target_users.markets → org.locations · facts.differentiation.competitors → org.competitors · facts.product_identity.industry → org.industry · constraints_assumptions (b2b/b2c signal) → org.business_model</td></tr>
+      </table>
+    </div>
+    <div class="rule-card">
+      <div class="rule-title">Sensitive Fields — hard gate, requires human approval before any use</div>
+      <table class="rt">
+        <tr><th>Field</th><th>Sensitive?</th><th>Staleness Threshold</th></tr>
+        <tr><td>pricing.*</td><td class="warn">⚠ Yes</td><td>30 days</td></tr>
+        <tr><td>roadmap.*</td><td class="warn">⚠ Yes</td><td>30 days</td></tr>
+        <tr><td>competitor_names</td><td class="warn">⚠ Yes</td><td>60 days</td></tr>
+        <tr><td>security_claims</td><td class="warn">⚠ Yes</td><td>90 days</td></tr>
+        <tr><td>positioning</td><td class="warn">⚠ Yes</td><td>90 days</td></tr>
+        <tr><td>customer_names</td><td class="warn">⚠ Yes</td><td>180 days</td></tr>
+        <tr><td>All other fields</td><td class="ok">No</td><td>—</td></tr>
+      </table>
+    </div>
+    <div class="rule-card">
+      <div class="rule-title">Lifecycle State Machine — per-fact status transitions</div>
+      <table class="rt">
+        <tr><th>Transition</th><th>Trigger</th></tr>
+        <tr><td>asserted → evidenced</td><td>A second independent source confirms the same claim on the same field_path</td></tr>
+        <tr><td>any → disputed</td><td>New source contradicts existing claim (value conflict detected by PKC)</td></tr>
+        <tr><td>any → stale</td><td>last_verified exceeds staleness threshold for that field type</td></tr>
+        <tr><td>disputed → asserted/evidenced</td><td>Team member resolves conflict via inbox</td></tr>
+        <tr><td>stale → asserted</td><td>Team member re-confirms value</td></tr>
+      </table>
+    </div>
+    <div class="rule-card">
+      <div class="rule-title">Product State Machine — product lifecycle (runs once per product, not per chat)</div>
+      <table class="rt">
+        <tr><th>State</th><th>Entry Condition</th><th>Notes</th></tr>
+        <tr><td class="mono">product_type_selection</td><td>Product created</td><td>Set once — b2b, b2c, or hybrid</td></tr>
+        <tr><td class="mono">onboarding</td><td>First ingestion pass</td><td>Never repeats</td></tr>
+        <tr><td class="mono">learning</td><td>Ongoing ingestion + gap filling</td><td></td></tr>
+        <tr><td class="mono">persona_extraction</td><td>Auto after each ingestion batch</td><td></td></tr>
+        <tr><td class="mono">founder_review</td><td>Inbox populated</td><td>Team resolves critical items</td></tr>
+        <tr><td class="mono">ready</td><td>No unresolved Critical items + ≥1 confirmed persona + no pending sensitive fields + ≥1 ICP</td><td>Can regress if new conflicts detected</td></tr>
+      </table>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+
+drawDiagram();
+buildAgentGrid();
+buildFlows();
+buildPKBSchema();
+buildPKCRules();
+updatePrompt();
+</script>
+</body>
+</html>

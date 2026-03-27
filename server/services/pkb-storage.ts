@@ -1,160 +1,150 @@
-import fs from "fs";
-import path from "path";
-import type { PKB } from "@shared/schema";
+import type { PKB, OrgPKB, OrgConflict } from "@shared/schema";
+import { supabase, PKB_BUCKET } from "../supabase-storage";
 
-const PKB_ROOT = path.join(process.cwd(), "pkb_store");
 const MAX_SNAPSHOTS = 25;
 
-function ensureDir(dir: string): void {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+// ──────────────────────────────────────────────────────────────────────────────
+// Supabase helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function uploadJSON(storagePath: string, data: unknown): Promise<void> {
+  const content = JSON.stringify(data, null, 2);
+  const { error } = await supabase.storage
+    .from(PKB_BUCKET)
+    .upload(storagePath, content, {
+      contentType: "application/json",
+      upsert: true,
+    });
+  if (error) throw new Error(`Failed to upload ${storagePath}: ${error.message}`);
+}
+
+async function downloadJSON<T>(storagePath: string): Promise<T | null> {
+  const { data, error } = await supabase.storage.from(PKB_BUCKET).download(storagePath);
+  if (error) {
+    const msg = (error as any).message ?? "";
+    if (msg.includes("Object not found") || (error as any).statusCode === 404 || (error as any).error === "Not Found") {
+      return null;
+    }
+    throw new Error(`Failed to download ${storagePath}: ${msg}`);
   }
+  const text = await data.text();
+  return JSON.parse(text) as T;
 }
 
-function getSessionDir(sessionId: string): string {
-  return path.join(PKB_ROOT, sessionId);
-}
-
-function getPKBPath(sessionId: string): string {
-  return path.join(getSessionDir(sessionId), "pkb.json");
-}
-
-function getSnapshotsDir(sessionId: string): string {
-  return path.join(getSessionDir(sessionId), "snapshots");
-}
-
-function atomicWrite(filePath: string, data: string): void {
-  const tempPath = `${filePath}.tmp.${Date.now()}`;
-  fs.writeFileSync(tempPath, data, "utf-8");
-  fs.renameSync(tempPath, filePath);
-}
-
-function createSnapshot(sessionId: string, pkb: PKB): void {
-  const snapshotsDir = getSnapshotsDir(sessionId);
-  ensureDir(snapshotsDir);
-
+async function createSnapshot(productId: string, pkb: PKB): Promise<void> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const snapshotPath = path.join(snapshotsDir, `pkb_${timestamp}.json`);
-  atomicWrite(snapshotPath, JSON.stringify(pkb, null, 2));
+  const snapshotPath = `product_${productId}/snapshots/pkb_${timestamp}.json`;
+  await uploadJSON(snapshotPath, pkb);
 
-  const snapshots = fs.readdirSync(snapshotsDir)
-    .filter(f => f.startsWith("pkb_") && f.endsWith(".json"))
-    .sort()
-    .reverse();
+  // Enforce MAX_SNAPSHOTS — list and delete oldest beyond the cap
+  const { data: files } = await supabase.storage
+    .from(PKB_BUCKET)
+    .list(`product_${productId}/snapshots`);
 
-  while (snapshots.length > MAX_SNAPSHOTS) {
-    const oldest = snapshots.pop();
-    if (oldest) {
-      fs.unlinkSync(path.join(snapshotsDir, oldest));
+  if (files && files.length > MAX_SNAPSHOTS) {
+    const sorted = files
+      .filter((f) => f.name.startsWith("pkb_") && f.name.endsWith(".json"))
+      .sort((a, b) => a.name.localeCompare(b.name)); // ascending = oldest first
+
+    const toDelete = sorted.slice(0, sorted.length - MAX_SNAPSHOTS);
+    if (toDelete.length > 0) {
+      await supabase.storage
+        .from(PKB_BUCKET)
+        .remove(toDelete.map((f) => `product_${productId}/snapshots/${f.name}`));
     }
   }
 }
 
-export function initializePKB(sessionId: string, productType: "b2b" | "b2c" | "hybrid", primaryMode?: "b2b" | "b2c"): PKB {
+// ──────────────────────────────────────────────────────────────────────────────
+// Product PKB functions
+// ──────────────────────────────────────────────────────────────────────────────
+
+export async function initializePKB(
+  productId: string,
+  productType: "b2b" | "b2c" | "hybrid",
+  primaryMode?: "b2b" | "b2c"
+): Promise<PKB> {
   const now = new Date().toISOString();
-  
   const pkb: PKB = {
     meta: {
-      session_id: sessionId,
+      product_id: productId,
       product_type: productType,
       primary_mode: primaryMode,
       version: "0.1",
       created_at: now,
       last_updated: now,
-      inputs: {
-        documents: [],
-        urls: [],
-        founder_sessions: [],
-      },
+      inputs: { documents: [], urls: [], founder_sessions: [] },
     },
     facts: {},
-    extensions: {
-      b2b: {},
-      b2c: {},
-    },
+    extensions: { b2b: {}, b2c: {} },
     derived_insights: {},
-    gaps: {
-      current: [],
-      history: [],
-    },
+    gaps: { current: [], history: [] },
     conflicts: [],
   };
-
-  savePKB(sessionId, pkb);
+  await savePKB(productId, pkb);
   return pkb;
 }
 
-export function loadPKB(sessionId: string): PKB | null {
-  const pkbPath = getPKBPath(sessionId);
-  
-  if (!fs.existsSync(pkbPath)) {
-    return null;
-  }
-
+export async function loadPKB(productId: string): Promise<PKB | null> {
   try {
-    const content = fs.readFileSync(pkbPath, "utf-8");
-    return JSON.parse(content) as PKB;
+    const pkb = await downloadJSON<PKB>(`product_${productId}/pkb.json`);
+    if (!pkb) return null;
+    // V0 migration: rename session_id → product_id
+    if ((pkb.meta as any).session_id && !pkb.meta.product_id) {
+      pkb.meta.product_id = (pkb.meta as any).session_id;
+      delete (pkb.meta as any).session_id;
+    }
+    return pkb;
   } catch (error) {
-    console.error(`Failed to load PKB for session ${sessionId}:`, error);
+    console.error(`Failed to load PKB for product ${productId}:`, error);
     return null;
   }
 }
 
-export function savePKB(sessionId: string, pkb: PKB): void {
-  const sessionDir = getSessionDir(sessionId);
-  ensureDir(sessionDir);
-
+export async function savePKB(productId: string, pkb: PKB): Promise<void> {
   pkb.meta.last_updated = new Date().toISOString();
-
-  createSnapshot(sessionId, pkb);
-
-  const pkbPath = getPKBPath(sessionId);
-  atomicWrite(pkbPath, JSON.stringify(pkb, null, 2));
+  await createSnapshot(productId, pkb);
+  await uploadJSON(`product_${productId}/pkb.json`, pkb);
 }
 
-export function deletePKB(sessionId: string): void {
-  const sessionDir = getSessionDir(sessionId);
-  
-  if (fs.existsSync(sessionDir)) {
-    fs.rmSync(sessionDir, { recursive: true, force: true });
+export async function deletePKB(productId: string): Promise<void> {
+  // Delete main PKB file
+  await supabase.storage.from(PKB_BUCKET).remove([`product_${productId}/pkb.json`]);
+
+  // Delete snapshots
+  const { data: snapFiles } = await supabase.storage
+    .from(PKB_BUCKET)
+    .list(`product_${productId}/snapshots`);
+  if (snapFiles && snapFiles.length > 0) {
+    await supabase.storage
+      .from(PKB_BUCKET)
+      .remove(snapFiles.map((f) => `product_${productId}/snapshots/${f.name}`));
   }
 }
 
-export function listSessions(): string[] {
-  ensureDir(PKB_ROOT);
-  
-  return fs.readdirSync(PKB_ROOT)
-    .filter(name => {
-      const sessionDir = path.join(PKB_ROOT, name);
-      return fs.statSync(sessionDir).isDirectory() && 
-             fs.existsSync(path.join(sessionDir, "pkb.json"));
-    });
+export async function listProducts(): Promise<string[]> {
+  const { data } = await supabase.storage.from(PKB_BUCKET).list("");
+  if (!data) return [];
+  return data.filter((f) => f.name.startsWith("product_")).map((f) => f.name);
 }
 
-export function getSnapshots(sessionId: string): string[] {
-  const snapshotsDir = getSnapshotsDir(sessionId);
-  
-  if (!fs.existsSync(snapshotsDir)) {
-    return [];
-  }
-
-  return fs.readdirSync(snapshotsDir)
-    .filter(f => f.startsWith("pkb_") && f.endsWith(".json"))
+export async function getSnapshots(productId: string): Promise<string[]> {
+  const { data } = await supabase.storage
+    .from(PKB_BUCKET)
+    .list(`product_${productId}/snapshots`);
+  if (!data) return [];
+  return data
+    .filter((f) => f.name.startsWith("pkb_") && f.name.endsWith(".json"))
+    .map((f) => f.name)
     .sort()
     .reverse();
 }
 
-export function restoreSnapshot(sessionId: string, snapshotName: string): PKB | null {
-  const snapshotPath = path.join(getSnapshotsDir(sessionId), snapshotName);
-  
-  if (!fs.existsSync(snapshotPath)) {
-    return null;
-  }
-
+export async function restoreSnapshot(productId: string, snapshotName: string): Promise<PKB | null> {
   try {
-    const content = fs.readFileSync(snapshotPath, "utf-8");
-    const pkb = JSON.parse(content) as PKB;
-    savePKB(sessionId, pkb);
+    const pkb = await downloadJSON<PKB>(`product_${productId}/snapshots/${snapshotName}`);
+    if (!pkb) return null;
+    await savePKB(productId, pkb);
     return pkb;
   } catch (error) {
     console.error(`Failed to restore snapshot ${snapshotName}:`, error);
@@ -162,97 +152,161 @@ export function restoreSnapshot(sessionId: string, snapshotName: string): PKB | 
   }
 }
 
-export function addDocumentInput(sessionId: string, filename: string, type: string, sizeBytes?: number): void {
-  let pkb = loadPKB(sessionId);
-  if (!pkb) {
-    pkb = initializePKB(sessionId, "b2b");
-  }
-
-  if (!pkb.meta.inputs) {
-    pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
-  }
-  if (!pkb.meta.inputs.documents) {
-    pkb.meta.inputs.documents = [];
-  }
-
+export async function addDocumentInput(
+  productId: string,
+  filename: string,
+  type: string,
+  sizeBytes?: number
+): Promise<void> {
+  let pkb = await loadPKB(productId);
+  if (!pkb) pkb = await initializePKB(productId, "b2b");
+  if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+  if (!pkb.meta.inputs.documents) pkb.meta.inputs.documents = [];
   pkb.meta.inputs.documents.push({
     filename,
     type,
     uploaded_at: new Date().toISOString(),
     size_bytes: sizeBytes,
   });
-
-  savePKB(sessionId, pkb);
+  await savePKB(productId, pkb);
 }
 
-export function addUrlInput(sessionId: string, url: string, title?: string): void {
-  let pkb = loadPKB(sessionId);
-  if (!pkb) {
-    pkb = initializePKB(sessionId, "b2b");
-  }
-
-  if (!pkb.meta.inputs) {
-    pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
-  }
-  if (!pkb.meta.inputs.urls) {
-    pkb.meta.inputs.urls = [];
-  }
-
-  const existingUrl = pkb.meta.inputs.urls.find(u => u.url === url);
+export async function addUrlInput(productId: string, url: string, title?: string): Promise<void> {
+  let pkb = await loadPKB(productId);
+  if (!pkb) pkb = await initializePKB(productId, "b2b");
+  if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+  if (!pkb.meta.inputs.urls) pkb.meta.inputs.urls = [];
+  const existingUrl = pkb.meta.inputs.urls.find((u) => u.url === url);
   if (!existingUrl) {
-    pkb.meta.inputs.urls.push({
-      url,
-      fetched_at: new Date().toISOString(),
-      title,
-    });
-    savePKB(sessionId, pkb);
+    pkb.meta.inputs.urls.push({ url, fetched_at: new Date().toISOString(), title });
+    await savePKB(productId, pkb);
   }
 }
 
-export function addMultipleUrlInputs(sessionId: string, urls: Array<{ url: string; title?: string }>): void {
-  let pkb = loadPKB(sessionId);
-  if (!pkb) {
-    pkb = initializePKB(sessionId, "b2b");
-  }
-
-  if (!pkb.meta.inputs) {
-    pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
-  }
-  if (!pkb.meta.inputs.urls) {
-    pkb.meta.inputs.urls = [];
-  }
-
-  const existingUrls = new Set(pkb.meta.inputs.urls.map(u => u.url));
-  
+export async function addMultipleUrlInputs(
+  productId: string,
+  urls: Array<{ url: string; title?: string }>
+): Promise<void> {
+  let pkb = await loadPKB(productId);
+  if (!pkb) pkb = await initializePKB(productId, "b2b");
+  if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+  if (!pkb.meta.inputs.urls) pkb.meta.inputs.urls = [];
+  const existingUrls = new Set(pkb.meta.inputs.urls.map((u) => u.url));
+  let changed = false;
   for (const { url, title } of urls) {
     if (!existingUrls.has(url)) {
-      pkb.meta.inputs.urls.push({
-        url,
-        fetched_at: new Date().toISOString(),
-        title,
-      });
+      pkb.meta.inputs.urls.push({ url, fetched_at: new Date().toISOString(), title });
       existingUrls.add(url);
+      changed = true;
     }
   }
-
-  savePKB(sessionId, pkb);
+  if (changed) await savePKB(productId, pkb);
 }
 
-export function addFounderSession(sessionId: string, founderSessionId: string): void {
-  const pkb = loadPKB(sessionId);
+export async function addFounderSession(productId: string, founderSessionId: string): Promise<void> {
+  const pkb = await loadPKB(productId);
   if (!pkb) return;
-
-  if (!pkb.meta.inputs) {
-    pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
-  }
-  if (!pkb.meta.inputs.founder_sessions) {
-    pkb.meta.inputs.founder_sessions = [];
-  }
-
+  if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+  if (!pkb.meta.inputs.founder_sessions) pkb.meta.inputs.founder_sessions = [];
+  const alreadyTracked = pkb.meta.inputs.founder_sessions.some(
+    (s) => s.session_id === founderSessionId
+  );
+  if (alreadyTracked) return;
   pkb.meta.inputs.founder_sessions.push({
     session_id: founderSessionId,
     started_at: new Date().toISOString(),
   });
+  await savePKB(productId, pkb);
+}
 
-  savePKB(sessionId, pkb);
+// ──────────────────────────────────────────────────────────────────────────────
+// Org PKB functions
+// ──────────────────────────────────────────────────────────────────────────────
+
+export function getOrgDir(orgId: number): string {
+  return `org_${orgId}`;
+}
+
+export async function initializeOrgPKB(orgId: number): Promise<OrgPKB> {
+  const now = new Date().toISOString();
+  const pkb: OrgPKB = {
+    org_id: orgId,
+    name: "",
+    description: "",
+    industry: "",
+    founded_year: null,
+    num_products: null,
+    locations: [],
+    competitors: [],
+    business_model: "",
+    website_url: "",
+    created_at: now,
+    updated_at: now,
+    conflicts: [],
+  };
+  await uploadJSON(`org_${orgId}/pkb.json`, pkb);
+  return pkb;
+}
+
+export async function loadOrgPKB(orgId: number): Promise<OrgPKB> {
+  try {
+    const pkb = await downloadJSON<OrgPKB>(`org_${orgId}/pkb.json`);
+    if (!pkb) return initializeOrgPKB(orgId);
+    // Lazy migration: add conflicts array if missing
+    if (!pkb.conflicts) pkb.conflicts = [];
+    return pkb;
+  } catch (error) {
+    console.error(`Failed to load org PKB for org ${orgId}:`, error);
+    return initializeOrgPKB(orgId);
+  }
+}
+
+export async function saveOrgPKB(orgId: number, pkb: OrgPKB): Promise<void> {
+  pkb.updated_at = new Date().toISOString();
+  await uploadJSON(`org_${orgId}/pkb.json`, pkb);
+}
+
+export async function updateOrgPKBFields(orgId: number, fields: Partial<OrgPKB>): Promise<OrgPKB> {
+  const pkb = await loadOrgPKB(orgId);
+  const updated: OrgPKB = { ...pkb, ...fields };
+  await saveOrgPKB(orgId, updated);
+  return updated;
+}
+
+export async function addOrgConflict(orgId: number, conflict: OrgConflict): Promise<void> {
+  const pkb = await loadOrgPKB(orgId);
+  if (!pkb.conflicts) pkb.conflicts = [];
+  pkb.conflicts.push(conflict);
+  await saveOrgPKB(orgId, pkb);
+}
+
+export async function resolveOrgConflict(
+  orgId: number,
+  conflictId: string,
+  resolution: "resolved" | "dismissed",
+  updatedValue?: string
+): Promise<OrgConflict | null> {
+  const pkb = await loadOrgPKB(orgId);
+  if (!pkb.conflicts) return null;
+
+  const conflict = pkb.conflicts.find((c) => c.id === conflictId);
+  if (!conflict) return null;
+
+  conflict.status = resolution;
+  conflict.resolved_at = new Date().toISOString();
+
+  if (resolution === "resolved" && updatedValue !== undefined) {
+    const currentValue = (pkb as any)[conflict.field];
+    if (Array.isArray(currentValue)) {
+      (pkb as any)[conflict.field] = updatedValue
+        .split(",")
+        .map((s: string) => s.trim())
+        .filter(Boolean);
+    } else {
+      (pkb as any)[conflict.field] = updatedValue;
+    }
+  }
+
+  await saveOrgPKB(orgId, pkb);
+  return conflict;
 }

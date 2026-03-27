@@ -30,18 +30,18 @@ export function ConfidenceDisplay({
     medium: {
       label: "Medium Confidence",
       icon: AlertTriangle,
-      color: "text-yellow-600 dark:text-yellow-500",
-      bgColor: "bg-yellow-500/10",
-      borderColor: "border-yellow-500/20",
-      progressColor: "bg-yellow-500",
+      color: "text-confidence-medium",
+      bgColor: "bg-confidence-medium/10",
+      borderColor: "border-confidence-medium/20",
+      progressColor: "bg-confidence-medium",
     },
     high: {
       label: "High Confidence",
       icon: CheckCircle2,
-      color: "text-emerald-600 dark:text-emerald-500",
-      bgColor: "bg-emerald-500/10",
-      borderColor: "border-emerald-500/20",
-      progressColor: "bg-emerald-500",
+      color: "text-confidence-high",
+      bgColor: "bg-confidence-high/10",
+      borderColor: "border-confidence-high/20",
+      progressColor: "bg-confidence-high",
     },
   };
 

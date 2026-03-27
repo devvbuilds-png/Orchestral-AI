@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orchestral-AI Architecture Map</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0d0f; color: #e2e8f0; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  #top-bar {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    background: #111115; border-bottom: 1px solid #1e1e2e; flex-shrink: 0; flex-wrap: wrap;
+  }
+  #top-bar h1 { font-size: 13px; font-weight: 700; color: #a78bfa; letter-spacing: 0.05em; white-space: nowrap; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #94a3b8; cursor: pointer; padding: 2px 6px; border-radius: 4px; border: 1px solid transparent; transition: all 0.15s; }
+  .legend-item:hover { border-color: #2e2e4e; }
+  .legend-item.off { opacity: 0.35; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  .zoom-controls { display: flex; gap: 4px; }
+  .zoom-btn { background: #1a1a2e; border: 1px solid #2e2e4e; color: #94a3b8; width: 26px; height: 26px; border-radius: 5px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+  .zoom-btn:hover { background: #2e2e4e; color: #e2e8f0; }
+
+  #main { display: flex; flex: 1; overflow: hidden; }
+
+  #canvas-wrap {
+    flex: 1; overflow: hidden; position: relative; cursor: grab;
+  }
+  #canvas-wrap.grabbing { cursor: grabbing; }
+  #canvas-wrap svg { position: absolute; top: 0; left: 0; }
+
+  #detail-panel {
+    width: 300px; flex-shrink: 0; background: #111115; border-left: 1px solid #1e1e2e;
+    display: flex; flex-direction: column; overflow: hidden;
+    transition: width 0.2s;
+  }
+  #detail-panel.hidden { width: 0; border: none; }
+  #detail-header {
+    padding: 14px 16px 10px; border-bottom: 1px solid #1e1e2e; flex-shrink: 0;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+  }
+  #detail-title { font-size: 13px; font-weight: 700; color: #e2e8f0; }
+  #detail-subtitle { font-size: 10px; color: #64748b; margin-top: 2px; }
+  #close-detail { background: none; border: none; color: #64748b; cursor: pointer; font-size: 16px; line-height: 1; }
+  #close-detail:hover { color: #e2e8f0; }
+  #detail-body { flex: 1; overflow-y: auto; padding: 12px 16px; }
+  .detail-section { margin-bottom: 16px; }
+  .detail-section h4 { font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .detail-chip { display: inline-block; background: #1a1a2e; border: 1px solid #2e2e4e; border-radius: 4px; padding: 2px 7px; font-size: 11px; color: #94a3b8; margin: 2px; }
+  .detail-item { font-size: 11px; color: #94a3b8; padding: 3px 0; border-bottom: 1px solid #1a1a2e; display: flex; align-items: flex-start; gap: 6px; }
+  .detail-item:last-child { border: none; }
+  .detail-item::before { content: "→"; color: #4a4a6a; flex-shrink: 0; }
+  .detail-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+
+  #bottom-bar {
+    background: #111115; border-top: 1px solid #1e1e2e; padding: 8px 16px;
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  #prompt-label { font-size: 10px; color: #64748b; white-space: nowrap; }
+  #prompt-out { flex: 1; font-size: 11px; font-family: monospace; color: #a78bfa; background: #0d0d0f; border: 1px solid #1e1e2e; border-radius: 5px; padding: 5px 9px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #copy-btn { background: #1a1a2e; border: 1px solid #2e2e4e; color: #94a3b8; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: 11px; white-space: nowrap; }
+  #copy-btn:hover { background: #2e2e4e; color: #e2e8f0; }
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  <h1>⬡ ORCHESTRAL-AI</h1>
+  <div class="legend" id="legend"></div>
+  <div class="zoom-controls">
+    <button class="zoom-btn" onclick="zoom(1.2)">+</button>
+    <button class="zoom-btn" onclick="zoom(0.83)">−</button>
+    <button class="zoom-btn" onclick="resetView()" title="Reset">⊙</button>
+  </div>
+  <div style="display:flex;gap:6px;">
+    <button class="zoom-btn" style="width:auto;padding:0 8px;font-size:10px;" onclick="setPreset('full')">Full</button>
+    <button class="zoom-btn" style="width:auto;padding:0 8px;font-size:10px;" onclick="setPreset('backend')">Backend</button>
+    <button class="zoom-btn" style="width:auto;padding:0 8px;font-size:10px;" onclick="setPreset('frontend')">Frontend</button>
+    <button class="zoom-btn" style="width:auto;padding:0 8px;font-size:10px;" onclick="setPreset('v1')">V1 Flow</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+  <div id="detail-panel" class="hidden">
+    <div id="detail-header">
+      <div>
+        <div id="detail-title">—</div>
+        <div id="detail-subtitle">—</div>
+      </div>
+      <button id="close-detail" onclick="closeDetail()">✕</button>
+    </div>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
+<div id="bottom-bar">
+  <span id="prompt-label">FOCUS:</span>
+  <div id="prompt-out">Click any node to explore its capabilities</div>
+  <button id="copy-btn" onclick="copyPrompt()">Copy</button>
+</div>
+
+<script>
+// ─── DATA ──────────────────────────────────────────────────────────────────
+
+const COLORS = {
+  agent:      { fill: '#1e3a5f', stroke: '#3b82f6', text: '#93c5fd', dot: '#3b82f6' },
+  storage:    { fill: '#2d1b4e', stroke: '#a855f7', text: '#d8b4fe', dot: '#a855f7' },
+  ingestion:  { fill: '#0f3535', stroke: '#14b8a6', text: '#5eead4', dot: '#14b8a6' },
+  ui:         { fill: '#3d1a3d', stroke: '#ec4899', text: '#f9a8d4', dot: '#ec4899' },
+  api:        { fill: '#3a2000', stroke: '#f97316', text: '#fdba74', dot: '#f97316' },
+  governance: { fill: '#3a0f0f', stroke: '#ef4444', text: '#fca5a5', dot: '#ef4444' },
+  persona:    { fill: '#3a2a00', stroke: '#f59e0b', text: '#fcd34d', dot: '#f59e0b' },
+  state:      { fill: '#0f3320', stroke: '#22c55e', text: '#86efac', dot: '#22c55e' },
+};
+
+const CATEGORIES = [
+  { id: 'state',      label: 'State Machine' },
+  { id: 'ingestion',  label: 'Ingestion' },
+  { id: 'agent',      label: 'Agents' },
+  { id: 'storage',    label: 'Storage / PKB' },
+  { id: 'governance', label: 'V1 Governance' },
+  { id: 'persona',    label: 'Personas / ICP' },
+  { id: 'api',        label: 'API Layer' },
+  { id: 'ui',         label: 'UI Components' },
+];
+
+const NODES = [
+  // ── State Machine ─────────────────────────────────────────────────────────
+  { id: 'state-machine', label: 'Session State Machine', sub: 'V0 + V1 flow', cat: 'state', x: 420, y: 30, w: 180, h: 40,
+    detail: {
+      desc: 'Controls the session lifecycle from initial product type selection through to ready state.',
+      sections: [
+        { title: 'V0 States', items: ['product_type_selection', 'onboarding', 'learning', 'ready'] },
+        { title: 'V1 States (additional)', items: ['persona_extraction', 'founder_review'] },
+        { title: 'Ready Conditions (V1)', items: ['No unresolved Critical inbox items', 'At least 1 active confirmed persona', 'No sensitive fields pending', 'At least 1 ICP defined'] },
+        { title: 'Chat Modes', items: ['Learner — builds knowledge, asks gap-filling questions', 'Explainer — answers from stored PKB'] },
+      ]
+    }
+  },
+  { id: 'product-type', label: 'Product Type Selector', sub: 'B2B / B2C / Hybrid', cat: 'state', x: 200, y: 30, w: 160, h: 40,
+    detail: {
+      desc: 'First step. Determines which PKB schema extensions are activated for the session.',
+      sections: [
+        { title: 'Types', items: ['B2B → unlocks enterprise fields (sales cycles, decision-makers, procurement)', 'B2C → unlocks consumer fields (user acquisition, retention, viral loops)', 'Hybrid → both extension sets active'] },
+      ]
+    }
+  },
+
+  // ── Ingestion ─────────────────────────────────────────────────────────────
+  { id: 'file-upload', label: 'File Upload', sub: 'PDF / DOCX / TXT / MD', cat: 'ingestion', x: 30, y: 130, w: 150, h: 40,
+    detail: {
+      desc: 'Accepts document uploads for knowledge extraction.',
+      sections: [
+        { title: 'Supported Formats', items: ['PDF', 'DOCX', 'TXT', 'Markdown (.md)'] },
+        { title: 'Limits', items: ['50MB per file', 'Per-session upload directory'] },
+        { title: 'Endpoint', items: ['POST /api/sessions/upload'] },
+      ]
+    }
+  },
+  { id: 'url-fetch', label: 'URL Fetcher', sub: 'Web page ingestion', cat: 'ingestion', x: 30, y: 190, w: 150, h: 40,
+    detail: {
+      desc: 'Fetches and parses web pages as a knowledge source.',
+      sections: [
+        { title: 'Endpoint', items: ['POST /api/sessions/fetch-url'] },
+        { title: 'Output', items: ['Extracted text passed to Information Extractor'] },
+      ]
+    }
+  },
+  { id: 'interview', label: 'Founder Interview', sub: 'Conversational chat', cat: 'ingestion', x: 30, y: 250, w: 150, h: 40,
+    detail: {
+      desc: 'Conversational ingestion via the Product Interviewer agent. Questions are dynamically generated based on current PKB gaps.',
+      sections: [
+        { title: 'Mode', items: ['Learner mode chat'] },
+        { title: 'Endpoint', items: ['POST /api/sessions/chat'] },
+        { title: 'Facts sourced as', items: ['"asserted" lifecycle status (highest trust)'] },
+      ]
+    }
+  },
+
+  // ── Agents ────────────────────────────────────────────────────────────────
+  { id: 'base-agent', label: 'Base Agent', sub: 'server/agents/base-agent.ts', cat: 'agent', x: 240, y: 130, w: 160, h: 40,
+    detail: {
+      desc: 'Shared utilities inherited by all other agents.',
+      sections: [
+        { title: 'Methods', items: ['callLLM() — single-shot LLM call', 'streamLLM() — streaming response', 'parseJSONResponse() — handles markdown code blocks + raw JSON'] },
+        { title: 'Model', items: ['OpenAI GPT-4o'] },
+      ]
+    }
+  },
+  { id: 'extractor', label: 'Information Extractor', sub: 'server/agents/information-extractor.ts', cat: 'agent', x: 240, y: 190, w: 160, h: 40,
+    detail: {
+      desc: 'Parses ingested content into structured facts with full source tracking.',
+      sections: [
+        { title: 'Outputs', items: ['Structured facts per PKB section', 'Source type + reference', 'Evidence quotes', 'Captured_at timestamp', 'Quality tag: strong / ok / weak'] },
+      ]
+    }
+  },
+  { id: 'synthesizer', label: 'Product Synthesizer', sub: 'server/agents/product-synthesizer.ts', cat: 'agent', x: 240, y: 250, w: 160, h: 40,
+    detail: {
+      desc: 'Generates higher-level insights and product briefs from accumulated facts.',
+      sections: [
+        { title: 'Outputs', items: ['Product brief summaries', 'Insight generation across fact corpus'] },
+      ]
+    }
+  },
+  { id: 'gap-identifier', label: 'Gap Identifier', sub: 'server/agents/gap-identifier.ts', cat: 'agent', x: 240, y: 310, w: 160, h: 40,
+    detail: {
+      desc: 'Analyzes the PKB for completeness and prioritizes what information is missing.',
+      sections: [
+        { title: 'Outputs', items: ['Gap list with priority ranking', 'Input for Product Interviewer', 'Endpoint: POST /api/sessions/recheck-gaps'] },
+      ]
+    }
+  },
+  { id: 'interviewer', label: 'Product Interviewer', sub: 'server/agents/product-interviewer.ts', cat: 'agent', x: 240, y: 370, w: 160, h: 40,
+    detail: {
+      desc: 'Conducts conversational interviews to fill knowledge gaps identified by Gap Identifier.',
+      sections: [
+        { title: 'Behavior', items: ['Gap-driven question generation', 'Tracks declined/refused fields (do_not_ask)', 'Runs in Learner chat mode'] },
+      ]
+    }
+  },
+  { id: 'explainer', label: 'Product Explainer', sub: 'server/agents/product-explainer.ts', cat: 'agent', x: 240, y: 430, w: 160, h: 40,
+    detail: {
+      desc: 'Answers questions strictly from the stored PKB — no hallucination, no web research.',
+      sections: [
+        { title: 'Behavior', items: ['Queries PKB knowledge only', 'Runs in Explainer chat mode', 'Endpoint: POST /api/sessions/explain'] },
+      ]
+    }
+  },
+  { id: 'persona-extractor', label: 'Persona Extractor', sub: 'server/agents/persona-extractor.ts', cat: 'agent', x: 240, y: 490, w: 160, h: 40,
+    detail: {
+      desc: 'V1 agent. Extracts structured persona and ICP objects from PKB content after each ingestion batch.',
+      sections: [
+        { title: 'Triggers', items: ['Auto-runs after ingestion', 'persona_extraction state'] },
+        { title: 'Outputs', items: ['Up to 3 active personas', 'ICP objects', 'Sends items to Review Inbox'] },
+      ]
+    }
+  },
+
+  // ── Storage / PKB ──────────────────────────────────────────────────────────
+  { id: 'pkb', label: 'Product Knowledge Base', sub: 'pkb_store/{sessionId}/pkb.json', cat: 'storage', x: 460, y: 130, w: 180, h: 40,
+    detail: {
+      desc: 'File-based JSON store per session. The single source of truth for all product knowledge.',
+      sections: [
+        { title: 'Core Sections', items: ['product_identity', 'value_proposition', 'target_users', 'use_cases[]', 'features[]', 'pricing', 'differentiation', 'proof_assets', 'constraints_assumptions'] },
+        { title: 'B2B Extensions', items: ['sales_cycles', 'decision_makers', 'procurement'] },
+        { title: 'B2C Extensions', items: ['user_acquisition', 'retention', 'viral_loops'] },
+        { title: 'V1 Top-level', items: ['personas[]', 'icps[]', 'mappings', 'review_inbox[]', 'conflicts[]'] },
+      ]
+    }
+  },
+  { id: 'pkb-facts', label: 'Fact Fields', sub: 'Per-fact metadata', cat: 'storage', x: 460, y: 190, w: 180, h: 40,
+    detail: {
+      desc: 'Every fact stored in the PKB carries rich metadata for governance and traceability.',
+      sections: [
+        { title: 'V0 Fields', items: ['source_type', 'source_ref', 'evidence (quote)', 'captured_at', 'quality: strong | ok | weak'] },
+        { title: 'V1 Fields (added)', items: ['lifecycle_status', 'sensitive: boolean', 'approved: boolean', 'locked: boolean', 'do_not_ask: boolean', 'last_verified: ISO timestamp', 'audit_trail: mutation log[]'] },
+      ]
+    }
+  },
+  { id: 'snapshots', label: 'PKB Snapshots', sub: 'Timestamped backups', cat: 'storage', x: 460, y: 250, w: 180, h: 40,
+    detail: {
+      desc: 'Every significant PKB mutation creates a timestamped snapshot for audit/rollback.',
+      sections: [
+        { title: 'Location', items: ['pkb_store/{sessionId}/snapshots/'] },
+        { title: 'Format', items: ['pkb_{ISO-timestamp}.json'] },
+      ]
+    }
+  },
+  { id: 'db', label: 'PostgreSQL + Drizzle', sub: 'Users, conversations', cat: 'storage', x: 460, y: 310, w: 180, h: 40,
+    detail: {
+      desc: 'Relational database for structured data. PKB itself lives in files, not here.',
+      sections: [
+        { title: 'Tables', items: ['users', 'conversations', 'messages'] },
+        { title: 'ORM', items: ['Drizzle ORM', 'Schema: shared/schema.ts', 'Migrations: npm run db:push'] },
+      ]
+    }
+  },
+
+  // ── V1 Governance ─────────────────────────────────────────────────────────
+  { id: 'lifecycle', label: 'Lifecycle States', sub: 'Knowledge governance', cat: 'governance', x: 460, y: 390, w: 180, h: 40,
+    detail: {
+      desc: 'Every fact has a lifecycle status controlling how it can be used.',
+      sections: [
+        { title: 'States', items: ['asserted — founder said it', 'evidenced — doc/URL confirms it', 'inferred — AI derived it', 'disputed — sources conflict', 'stale — exceeds staleness threshold'] },
+        { title: 'Transitions', items: ['asserted → evidenced: doc supports claim', 'any → disputed: new source contradicts', 'any → stale: last_verified expired', 'disputed → asserted: founder resolves', 'stale → asserted: founder re-confirms'] },
+      ]
+    }
+  },
+  { id: 'sensitive', label: 'Sensitive Field Gate', sub: 'Hard approval gate', cat: 'governance', x: 460, y: 450, w: 180, h: 40,
+    detail: {
+      desc: 'Certain fields are gated and cannot be auto-committed or exposed without explicit founder approval.',
+      sections: [
+        { title: 'Gated Fields', items: ['pricing (model, tiers, numbers, discounts)', 'customer_names (references, case studies)', 'security_claims (SOC2, ISO, compliance)', 'roadmap (forward-looking statements)'] },
+        { title: 'Behavior', items: ['Can be extracted and proposed', 'Never auto-committed', 'Never exposed to downstream agents without approval'] },
+      ]
+    }
+  },
+  { id: 'conflicts', label: 'Conflict Detection', sub: 'Source disagreement', cat: 'governance', x: 460, y: 510, w: 180, h: 40,
+    detail: {
+      desc: 'When two sources disagree on the same field_path, a conflict is recorded and surfaced to the inbox.',
+      sections: [
+        { title: 'Trigger', items: ['New source contradicts existing claim on same field_path'] },
+        { title: 'Resolution', items: ['Founder picks value A or value B via Review Inbox', 'Status updates from disputed → asserted/evidenced'] },
+      ]
+    }
+  },
+  { id: 'staleness', label: 'Staleness Thresholds', sub: 'Per-category TTLs', cat: 'governance', x: 460, y: 570, w: 180, h: 40,
+    detail: {
+      desc: 'Facts go stale based on category-specific time thresholds.',
+      sections: [
+        { title: 'Thresholds (days)', items: ['pricing: 30', 'roadmap: 30', 'competitor_names: 60', 'security_claims: 90', 'positioning: 90', 'customer_names: 180'] },
+      ]
+    }
+  },
+
+  // ── Personas / ICP ────────────────────────────────────────────────────────
+  { id: 'personas', label: 'Persona Objects', sub: 'Max 3 active', cat: 'persona', x: 700, y: 390, w: 170, h: 40,
+    detail: {
+      desc: 'Structured persona objects extracted from founder inputs, not web research.',
+      sections: [
+        { title: 'Types', items: ['buyer_persona', 'user_persona', 'influencer', 'economic_buyer', 'gatekeeper'] },
+        { title: 'Status', items: ['active (max 3)', 'candidate', 'inactive'] },
+        { title: 'Fields', items: ['goals[], pains[], objections[]', 'buying_triggers[], success_metrics[]', 'context (company stage/size/region)', 'evidence[], lifecycle_status, confidence'] },
+        { title: 'Rules', items: ['Ranked by evidence strength → decision power → frequency', 'Founder confirms/demotes — never creates manually'] },
+      ]
+    }
+  },
+  { id: 'icps', label: 'ICP Objects', sub: 'Ideal Customer Profiles', cat: 'persona', x: 700, y: 450, w: 170, h: 40,
+    detail: {
+      desc: 'Structured ICP objects covering firmographics, technographics, and buying context.',
+      sections: [
+        { title: 'Segment Types', items: ['b2b', 'b2c', 'hybrid'] },
+        { title: 'Firmographics', items: ['company_size[]', 'industries[]', 'geography[]'] },
+        { title: 'Technographics', items: ['must_have_integrations[]', 'deployment_preferences[]', 'security_requirements[]'] },
+        { title: 'Exclusions', items: ['not_for[] — categorical exclusions', 'disqualifiers[] — contextual blockers'] },
+      ]
+    }
+  },
+  { id: 'mappings', label: 'Persona Mappings', sub: 'Fact relevance index', cat: 'persona', x: 700, y: 510, w: 170, h: 40,
+    detail: {
+      desc: 'Links personas to relevant facts and gaps in the PKB.',
+      sections: [
+        { title: 'Index Types', items: ['persona-to-fact relevance', 'persona-to-gap index'] },
+        { title: 'Purpose', items: ['Enables downstream V2 agents to query persona-scoped knowledge'] },
+      ]
+    }
+  },
+
+  // ── API ───────────────────────────────────────────────────────────────────
+  { id: 'api', label: 'REST API', sub: '/api/sessions/…', cat: 'api', x: 700, y: 130, w: 170, h: 40,
+    detail: {
+      desc: 'All backend endpoints are prefixed with /api/sessions/.',
+      sections: [
+        { title: 'Session Management', items: ['POST /init', 'POST /set-product-type', 'GET /:sessionId'] },
+        { title: 'Ingestion', items: ['POST /upload', 'POST /fetch-url', 'POST /process'] },
+        { title: 'Chat', items: ['POST /chat (Learner mode)', 'POST /explain (Explainer mode)'] },
+        { title: 'Governance', items: ['POST /recheck-gaps', 'GET /:sessionId/inbox', 'POST /inbox/:itemId/resolve'] },
+      ]
+    }
+  },
+
+  // ── Review Inbox ──────────────────────────────────────────────────────────
+  { id: 'inbox', label: 'Founder Review Inbox', sub: 'client/src/components/review-inbox.tsx', cat: 'governance', x: 700, y: 200, w: 170, h: 40,
+    detail: {
+      desc: 'Slide-in panel (420px) for founder knowledge governance. Auto-refreshes every 30s.',
+      sections: [
+        { title: 'Priority Tiers', items: ['Critical (red) — sensitive fields + conflicts', 'Persona & ICP (orange) — confirmations', 'Advisory (yellow) — low confidence', 'Informational (green) — FYI'] },
+        { title: 'Item Types + Actions', items: ['sensitive_field → Approve / Reject / Lock / Don\'t ask', 'conflict → Use A / Use B', 'persona_confirmation → Confirm / Demote', 'icp_confirmation → Confirm / Reject', 'low_confidence / informational → Noted / Don\'t ask'] },
+        { title: 'States', items: ['unresolved → shown in panel', 'resolved → removed from view', 'Empty state: "All caught up!" with checkmark'] },
+      ]
+    }
+  },
+
+  // ── UI Components ─────────────────────────────────────────────────────────
+  { id: 'ui-chat', label: 'Chat Interface', sub: 'chat-interface / chat-input / chat-message', cat: 'ui', x: 700, y: 290, w: 170, h: 40,
+    detail: {
+      desc: 'Core conversation UI for both Learner and Explainer modes.',
+      sections: [
+        { title: 'Components', items: ['chat-interface.tsx — container + state', 'chat-input.tsx — message composer', 'chat-message.tsx — message renderer'] },
+      ]
+    }
+  },
+  { id: 'ui-confidence', label: 'Confidence Bar', sub: 'confidence-bar / confidence-display', cat: 'ui', x: 700, y: 350, w: 170, h: 40,
+    detail: {
+      desc: 'Visualizes PKB completeness with interactive detail expansion.',
+      sections: [
+        { title: 'Tiers', items: ['HIGH: 75–100% of required fields', 'MEDIUM: 40–74%', 'LOW: 0–39%'] },
+        { title: 'Interactivity', items: ['Click to expand section-by-section breakdown'] },
+      ]
+    }
+  },
+  { id: 'ui-sidebar', label: 'Session Sidebar', sub: 'session-sidebar / session-naming-dialog', cat: 'ui', x: 900, y: 130, w: 170, h: 40,
+    detail: {
+      desc: 'Left sidebar listing all sessions with naming and management.',
+      sections: [
+        { title: 'Components', items: ['session-sidebar.tsx — session list', 'session-naming-dialog.tsx — rename flow'] },
+        { title: 'Storage', items: ['Client-side localStorage (pkb-sessions key)'] },
+      ]
+    }
+  },
+  { id: 'ui-misc', label: 'Supporting UI', sub: 'Various components', cat: 'ui', x: 900, y: 190, w: 170, h: 40,
+    detail: {
+      desc: 'Additional UI components supporting the main experience.',
+      sections: [
+        { title: 'Components', items: ['document-upload.tsx', 'processing-overlay.tsx', 'mode-toggle.tsx (Learner↔Explainer)', 'product-type-selector.tsx', 'storytelling-summary.tsx', 'pkb-knowledge-view.tsx', 'gap-fill-dialog.tsx', 'theme-toggle.tsx'] },
+      ]
+    }
+  },
+];
+
+const EDGES = [
+  { from: 'product-type', to: 'state-machine', type: 'state' },
+  { from: 'state-machine', to: 'pkb', type: 'data' },
+  { from: 'file-upload', to: 'extractor', type: 'data' },
+  { from: 'url-fetch', to: 'extractor', type: 'data' },
+  { from: 'interview', to: 'interviewer', type: 'data' },
+  { from: 'extractor', to: 'pkb', type: 'data' },
+  { from: 'pkb', to: 'synthesizer', type: 'data' },
+  { from: 'pkb', to: 'gap-identifier', type: 'data' },
+  { from: 'gap-identifier', to: 'interviewer', type: 'data' },
+  { from: 'pkb', to: 'explainer', type: 'data' },
+  { from: 'pkb', to: 'persona-extractor', type: 'data' },
+  { from: 'persona-extractor', to: 'personas', type: 'data' },
+  { from: 'persona-extractor', to: 'icps', type: 'data' },
+  { from: 'persona-extractor', to: 'inbox', type: 'event' },
+  { from: 'sensitive', to: 'inbox', type: 'event' },
+  { from: 'conflicts', to: 'inbox', type: 'event' },
+  { from: 'pkb', to: 'pkb-facts', type: 'dep' },
+  { from: 'pkb', to: 'snapshots', type: 'dep' },
+  { from: 'pkb', to: 'lifecycle', type: 'dep' },
+  { from: 'pkb', to: 'sensitive', type: 'dep' },
+  { from: 'pkb', to: 'conflicts', type: 'dep' },
+  { from: 'pkb', to: 'staleness', type: 'dep' },
+  { from: 'personas', to: 'mappings', type: 'dep' },
+  { from: 'api', to: 'extractor', type: 'call' },
+  { from: 'api', to: 'inbox', type: 'call' },
+  { from: 'base-agent', to: 'extractor', type: 'dep' },
+  { from: 'base-agent', to: 'synthesizer', type: 'dep' },
+  { from: 'base-agent', to: 'gap-identifier', type: 'dep' },
+  { from: 'base-agent', to: 'interviewer', type: 'dep' },
+  { from: 'base-agent', to: 'explainer', type: 'dep' },
+  { from: 'base-agent', to: 'persona-extractor', type: 'dep' },
+  { from: 'ui-chat', to: 'api', type: 'call' },
+  { from: 'ui-confidence', to: 'pkb', type: 'data' },
+  { from: 'inbox', to: 'api', type: 'call' },
+];
+
+const EDGE_STYLES = {
+  data:  { color: '#3b82f6', dash: 'none', label: 'data flow' },
+  state: { color: '#22c55e', dash: 'none', label: 'state' },
+  call:  { color: '#f97316', dash: '5,3', label: 'API call' },
+  event: { color: '#ef4444', dash: '4,4', label: 'event' },
+  dep:   { color: '#374151', dash: '3,5', label: 'dependency' },
+};
+
+// ─── STATE ─────────────────────────────────────────────────────────────────
+
+const state = {
+  scale: 1,
+  tx: 0,
+  ty: 0,
+  selected: null,
+  visibleCats: new Set(CATEGORIES.map(c => c.id)),
+  dragging: false,
+  dragStart: null,
+};
+
+const PRESETS = {
+  full:     { scale: 0.72, tx: -10, ty: 10 },
+  backend:  { scale: 0.85, tx: -200, ty: -20, hide: ['ui'] },
+  frontend: { scale: 1.1,  tx: -600, ty: -100, show: ['ui', 'api', 'state'] },
+  v1:       { scale: 0.82, tx: -30, ty: -250, show: ['governance', 'persona', 'state', 'agent'] },
+};
+
+// ─── RENDER ────────────────────────────────────────────────────────────────
+
+const svg = document.getElementById('svg');
+const W = 1100, H = 700;
+svg.setAttribute('width', W);
+svg.setAttribute('height', H);
+
+function nodeCenter(n) {
+  return { x: n.x + n.w / 2, y: n.y + n.h / 2 };
+}
+
+function buildSVG() {
+  const visibleIds = new Set(NODES.filter(n => state.visibleCats.has(n.cat)).map(n => n.id));
+
+  // Defs
+  let defs = '<defs>';
+  for (const [key, es] of Object.entries(EDGE_STYLES)) {
+    defs += `<marker id="arr-${key}" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="${es.color}" opacity="0.8"/></marker>`;
+  }
+  defs += '</defs>';
+
+  // Edges
+  let edges = '';
+  for (const e of EDGES) {
+    if (!visibleIds.has(e.from) || !visibleIds.has(e.to)) continue;
+    const a = NODES.find(n => n.id === e.from);
+    const b = NODES.find(n => n.id === e.to);
+    const ca = nodeCenter(a), cb = nodeCenter(b);
+    const es = EDGE_STYLES[e.type];
+    const mx = (ca.x + cb.x) / 2;
+    const my = (ca.y + cb.y) / 2;
+    const d = `M${ca.x},${ca.y} Q${mx},${my} ${cb.x},${cb.y}`;
+    const dash = es.dash !== 'none' ? `stroke-dasharray="${es.dash}"` : '';
+    edges += `<path d="${d}" stroke="${es.color}" stroke-width="1.5" fill="none" opacity="0.5" ${dash} marker-end="url(#arr-${e.type})"/>`;
+  }
+
+  // Nodes
+  let nodes = '';
+  for (const n of NODES) {
+    if (!visibleIds.has(n.id)) continue;
+    const c = COLORS[n.cat];
+    const isSelected = state.selected === n.id;
+    const strokeW = isSelected ? 2.5 : 1.5;
+    const glow = isSelected ? `filter="url(#glow-${n.cat})"` : '';
+    nodes += `
+      <g class="node" data-id="${n.id}" style="cursor:pointer" onclick="selectNode('${n.id}')">
+        <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="7"
+          fill="${c.fill}" stroke="${c.stroke}" stroke-width="${strokeW}" opacity="0.95"/>
+        <text x="${n.x + n.w/2}" y="${n.y + 15}" text-anchor="middle" font-size="11" font-weight="600" fill="${c.text}" font-family="system-ui">${n.label}</text>
+        <text x="${n.x + n.w/2}" y="${n.y + 29}" text-anchor="middle" font-size="9" fill="${c.stroke}" opacity="0.7" font-family="monospace">${n.sub}</text>
+      </g>`;
+  }
+
+  svg.innerHTML = defs + `<g id="diagram" transform="translate(${state.tx},${state.ty}) scale(${state.scale})">${edges}${nodes}</g>`;
+}
+
+// ─── LEGEND ────────────────────────────────────────────────────────────────
+
+function buildLegend() {
+  const leg = document.getElementById('legend');
+  leg.innerHTML = CATEGORIES.map(c => {
+    const col = COLORS[c.id];
+    const off = !state.visibleCats.has(c.id) ? ' off' : '';
+    return `<div class="legend-item${off}" onclick="toggleCat('${c.id}')">
+      <span class="legend-dot" style="background:${col.dot}"></span>
+      <span>${c.label}</span>
+    </div>`;
+  }).join('');
+}
+
+// ─── DETAIL PANEL ──────────────────────────────────────────────────────────
+
+function selectNode(id) {
+  state.selected = state.selected === id ? null : id;
+  const node = NODES.find(n => n.id === id);
+  const panel = document.getElementById('detail-panel');
+  if (!node || !state.selected) { closeDetail(); return; }
+
+  panel.classList.remove('hidden');
+  document.getElementById('detail-title').textContent = node.label;
+  document.getElementById('detail-subtitle').textContent = node.sub;
+
+  const body = document.getElementById('detail-body');
+  const c = COLORS[node.cat];
+  const catInfo = CATEGORIES.find(x => x.id === node.cat);
+
+  let html = `<div class="detail-section">
+    <div class="detail-badge" style="background:${c.fill};color:${c.text};border:1px solid ${c.stroke}">${catInfo.label}</div>
+    <p style="font-size:11px;color:#94a3b8;margin-top:8px;line-height:1.5">${node.detail.desc}</p>
+  </div>`;
+
+  for (const sec of node.detail.sections) {
+    html += `<div class="detail-section"><h4>${sec.title}</h4>`;
+    html += sec.items.map(item => `<div class="detail-item">${item}</div>`).join('');
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
+
+  // Update prompt
+  document.getElementById('prompt-out').textContent =
+    `Focusing on: ${node.label} (${catInfo.label}) — ${node.detail.desc}`;
+
+  buildSVG();
+}
+
+function closeDetail() {
+  state.selected = null;
+  document.getElementById('detail-panel').classList.add('hidden');
+  document.getElementById('prompt-out').textContent = 'Click any node to explore its capabilities';
+  buildSVG();
+}
+
+// ─── CONTROLS ──────────────────────────────────────────────────────────────
+
+function toggleCat(id) {
+  if (state.visibleCats.has(id)) state.visibleCats.delete(id);
+  else state.visibleCats.add(id);
+  buildLegend();
+  buildSVG();
+}
+
+function zoom(factor) {
+  state.scale = Math.min(3, Math.max(0.3, state.scale * factor));
+  buildSVG();
+}
+
+function resetView() {
+  state.scale = 0.72; state.tx = -10; state.ty = 10;
+  state.visibleCats = new Set(CATEGORIES.map(c => c.id));
+  buildLegend(); buildSVG();
+}
+
+function setPreset(name) {
+  const p = PRESETS[name];
+  state.scale = p.scale; state.tx = p.tx; state.ty = p.ty;
+  if (p.show) state.visibleCats = new Set(p.show);
+  else if (p.hide) { state.visibleCats = new Set(CATEGORIES.map(c => c.id)); p.hide.forEach(h => state.visibleCats.delete(h)); }
+  else state.visibleCats = new Set(CATEGORIES.map(c => c.id));
+  buildLegend(); buildSVG();
+}
+
+function copyPrompt() {
+  const text = document.getElementById('prompt-out').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+// ─── PAN ───────────────────────────────────────────────────────────────────
+
+const wrap = document.getElementById('canvas-wrap');
+
+wrap.addEventListener('mousedown', e => {
+  if (e.target.closest('.node')) return;
+  state.dragging = true;
+  state.dragStart = { x: e.clientX - state.tx, y: e.clientY - state.ty };
+  wrap.classList.add('grabbing');
+});
+
+window.addEventListener('mousemove', e => {
+  if (!state.dragging) return;
+  state.tx = e.clientX - state.dragStart.x;
+  state.ty = e.clientY - state.dragStart.y;
+  buildSVG();
+});
+
+window.addEventListener('mouseup', () => {
+  state.dragging = false;
+  wrap.classList.remove('grabbing');
+});
+
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom(e.deltaY < 0 ? 1.1 : 0.9);
+}, { passive: false });
+
+// ─── INIT ──────────────────────────────────────────────────────────────────
+
+buildLegend();
+resetView();
+</script>
+</body>
+</html>

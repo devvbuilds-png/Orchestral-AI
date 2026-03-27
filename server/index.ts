@@ -1,7 +1,12 @@
+import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { Pool } from "pg";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { passport } from "./auth";
 
 const app = express();
 const httpServer = createServer(app);
@@ -21,6 +26,64 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// ── Session store (Postgres) ─────────────────────────────────────────────────
+const PgStore = connectPgSimple(session);
+const pgPool = new Pool({ connectionString: process.env.DATABASE_URL || "" });
+
+app.use(
+  session({
+    store: new PgStore({
+      pool: pgPool,
+      createTableIfMissing: true,
+    }),
+    secret: process.env.SESSION_SECRET || "dev-secret-change-in-production",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    },
+  })
+);
+
+// ── Passport ─────────────────────────────────────────────────────────────────
+app.use(passport.initialize());
+app.use(passport.session());
+
+// ── Auth routes (unprotected — must be before requireAuth middleware) ────────
+// GET /auth/google — initiate OAuth flow
+app.get(
+  "/auth/google",
+  passport.authenticate("google", { scope: ["email", "profile"] })
+);
+
+// GET /auth/google/callback — Google redirects here after auth
+app.get(
+  "/auth/google/callback",
+  passport.authenticate("google", { failureRedirect: "/?auth=failed" }),
+  (_req: Request, res: Response) => {
+    res.redirect("/");
+  }
+);
+
+// GET /auth/logout
+app.get("/auth/logout", (req: Request, res: Response) => {
+  req.logout((err) => {
+    if (err) console.error("Logout error:", err);
+    res.redirect("/");
+  });
+});
+
+// GET /api/auth/me — returns current user (unprotected — used for auth check)
+app.get("/api/auth/me", (req: Request, res: Response) => {
+  if (!req.isAuthenticated() || !req.user) {
+    return res.status(401).json({ user: null });
+  }
+  const { id, email, display_name } = req.user;
+  res.json({ user: { id, email, display_name } });
+});
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

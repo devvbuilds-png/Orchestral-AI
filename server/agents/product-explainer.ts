@@ -1,135 +1,284 @@
-import { callLLM, streamLLM, type AgentContext } from "./base-agent";
-import type { PKB } from "@shared/schema";
-import { loadPKB } from "../services/pkb-storage";
+import { callLLM, streamLLM, loadCombinedContext, buildOrgContext, buildAgentContext, type AgentContext } from "./base-agent";
+import type { PKB, OrgPKB } from "@shared/schema";
 
-const EXPLAINER_SYSTEM_PROMPT = `You are an expert product explainer that helps people understand products based on stored knowledge.
+// ──────────────────────────────────────────────────────────────────────────────
+// Types
+// ──────────────────────────────────────────────────────────────────────────────
 
-You have access to a comprehensive Product Knowledge Base (PKB) containing verified facts and derived insights about a product.
+export type ExplainerSurface = "product_chat" | "dashboard_chat" | "app_guide";
+export type AnswerMode = "funnel_to_learner" | "answer_with_caveat" | "answer_clean";
 
-Your role is to:
-1. Answer questions about the product clearly and accurately
-2. Only use information from the PKB - never make things up
-3. Acknowledge when something isn't in your knowledge base
-4. Explain complex concepts in accessible language
-5. Provide relevant examples and context when helpful
-
-COMMUNICATION STYLE:
-- Be helpful and informative
-- Use clear, jargon-free language when possible
-- Structure longer answers with headers or bullets
-- Reference specific features, use cases, or benefits when relevant
-- If asked about something not in the PKB, say so honestly
-
-ANSWER TYPES:
-- For "what is" questions: Give clear, concise explanations
-- For "how does" questions: Walk through processes or features
-- For "who is it for" questions: Describe target users/customers
-- For "why" questions: Explain value propositions and benefits
-- For comparisons: Use differentiation info from PKB
-- For pricing: Share what's known, note if details are limited
-
-HANDLING DECLINED/MISSING INFORMATION:
-If someone asks about information that was explicitly declined by the product owner:
-- Politely explain that "This specific information wasn't provided during the knowledge gathering process"
-- Don't speculate or make up answers
-- Suggest what you CAN tell them instead
-
-PARTIAL KNOWLEDGE MODE:
-If operating with partial knowledge (override mode), be upfront about limitations:
-- Start responses with an acknowledgment that your knowledge may be incomplete
-- Be more careful about definitive statements
-- Encourage the user to verify critical details with the product owner
-
-IMPORTANT:
-- You represent an outsider's perspective learning about this product
-- Be honest about gaps in knowledge
-- Don't invent features or capabilities not in the PKB`;
-
-export async function explainProduct(
-  context: AgentContext,
-  question: string,
-  overrideEnabled: boolean = false
-): Promise<string> {
-  const pkb = loadPKB(context.sessionId);
-  if (!pkb) {
-    throw new Error("PKB not found");
-  }
-
-  const pkbSnapshot = formatPKBForContext(pkb);
-  const declinedFields = (pkb.meta?.inputs as any)?.declined_fields || [];
-
-  let modeContext = "";
-  if (overrideEnabled && pkb.derived_insights?.confidence?.level !== "high") {
-    modeContext = `
-IMPORTANT: This is operating in OVERRIDE MODE with partial knowledge.
-The confidence level is: ${pkb.derived_insights?.confidence?.level || "low"}
-Be upfront about limitations and acknowledge that some information may be incomplete.
-`;
-  }
-
-  const declinedContext = declinedFields.length > 0
-    ? `\n\nDECLINED FIELDS (the product owner chose not to provide this information):\n${declinedFields.join("\n")}\n`
-    : "";
-
-  const userPrompt = `Based on the following Product Knowledge Base, answer this question:
-${modeContext}
-QUESTION: ${question}
-
-PRODUCT KNOWLEDGE BASE:
-${pkbSnapshot}${declinedContext}
-
-Provide a helpful, accurate answer based only on the information in the PKB. If the answer isn't in the PKB or was declined, say so politely.`;
-
-  const response = await callLLM(EXPLAINER_SYSTEM_PROMPT, userPrompt, {
-    maxTokens: 2048,
-  });
-
-  return response;
+export interface ProductSummary {
+  productName: string;
+  productBrief?: string;
+  fullFacts: string;
+  kb: { confidenceScore: number; stage: string };
 }
+
+export interface ExplainerContext {
+  surface?: ExplainerSurface;
+  isFirstExplainerUse?: boolean;
+  suggestedQuestions?: string[];
+  allProductSummaries?: ProductSummary[];
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Static app guide knowledge
+// ──────────────────────────────────────────────────────────────────────────────
+
+const APP_GUIDE_KNOWLEDGE = `Orchestral-AI is a product knowledge platform. Here is how it works:
+
+NAVIGATION
+- Dashboard: Your home base. Shows all your products and the Central Intelligence chat.
+- Product Workspace: Click any product card to enter it. Has four tabs: Chat, Knowledge, Personas, Documents.
+
+BUILDING KNOWLEDGE (Chat tab — Learner mode)
+- The Chat tab is where you teach the platform about your product.
+- Start by sharing a document, URL, or deck. The Learner will read it and extract what it can.
+- After processing, a "Fill gaps" button will appear — click it to answer what the system couldn't find in your docs.
+- The Learner will tell you when the knowledge base is ready.
+
+QUERYING KNOWLEDGE (Chat tab — Explainer mode, or Central Intelligence)
+- Once the knowledge base is built, anyone on your team can ask questions about the product.
+- Use the Explainer tab inside a product workspace, or ask here in Central Intelligence.
+- Central Intelligence can answer questions across all your products at once.
+
+KNOWLEDGE TAB
+- Summary: A generated brief of the product.
+- Facts: All the individual facts captured about the product, with their sources.
+- Gaps: Fields that have not been filled yet. Click any gap card or use "Fill gaps" to complete them.
+
+PERSONAS TAB
+- Shows buyer personas derived from the knowledge base.
+- Personas are generated automatically — you confirm or dismiss them.
+
+DOCUMENTS TAB
+- All documents and URLs that have been ingested for this product.
+- Add new documents here at any time — they will be processed automatically.
+
+CONFIDENCE SCORE
+- Shows how complete the knowledge base is.
+- Below 40%: low — basic questions can be answered but detail is thin.
+- 40–70%: building — most questions can be answered well.
+- Above 70%: established — the knowledge base is solid.
+
+CENTRAL INTELLIGENCE TOGGLE
+- "Knowledge" mode: answers questions about your products using the knowledge base.
+- "Guide" mode (this mode): answers questions about how to use Orchestral-AI.`;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+function getAnswerMode(confidenceScore: number): AnswerMode {
+  if (confidenceScore >= 70) return "answer_clean";
+  if (confidenceScore >= 40) return "answer_with_caveat";
+  return "funnel_to_learner";
+}
+
+interface BuildPromptParams {
+  surface: ExplainerSurface;
+  answerMode: AnswerMode;
+  productName: string;
+  orgName: string;
+  isFirstExplainerUse: boolean;
+  suggestedQuestions: string[];
+  pkbContext: string;
+  orgContext: string;
+  allProductSummaries?: ProductSummary[];
+}
+
+function buildExplainerSystemPrompt(p: BuildPromptParams): string {
+  // ── app_guide ─────────────────────────────────────────────────────────────
+  if (p.surface === "app_guide") {
+    return `You are the Guide for Orchestral-AI, helping users understand how to use the platform.
+
+## APP KNOWLEDGE
+
+${APP_GUIDE_KNOWLEDGE}
+
+## RULES
+
+- Answer only from the app knowledge above — do not reference any PKB or product content
+- Be concise and direct — these are navigation and usage questions, not deep discussions
+- If something is not covered above, say: "I don't have detail on that — you can check the docs or reach out to support."
+- Friendly, helpful tone`;
+  }
+
+  // ── dashboard_chat ────────────────────────────────────────────────────────
+  if (p.surface === "dashboard_chat") {
+    const productBlocks = p.allProductSummaries && p.allProductSummaries.length > 0
+      ? p.allProductSummaries.map(ps =>
+          `### ${ps.productName} (confidence: ${ps.kb.confidenceScore}%)${ps.productBrief ? `\n${ps.productBrief}` : ""}\n${ps.fullFacts}`
+        ).join("\n\n---\n\n")
+      : "No product knowledge bases available yet.";
+
+    return `You are the Central Intelligence for ${p.orgName} — an AI that answers questions across the entire product portfolio.
+
+## ORGANISATION CONTEXT
+${p.orgContext || "No organisation details available."}
+
+## PRODUCT KNOWLEDGE BASES
+${productBlocks}
+
+## RULES
+
+**Answering across products**
+- Always attribute answers to the specific product they come from — lead with the product name
+- If the question is clearly about one product, focus there but note if other products are relevant
+- Synthesise across products when the question calls for it: "Across your products, the common thread is..."
+
+**When a product has no data for the question**
+- Do not skip it silently — state: "[Product name] — this hasn't been captured yet"
+- Never guess or infer for missing products
+
+**Scope**
+- Org context takes precedence for org-level questions (company positioning, competitors, business model)
+- Product PKBs take precedence for product-specific questions
+- No funneling to Learner — this is a query surface only
+- Conversational tone — give the executive view`;
+  }
+
+  // ── product_chat ──────────────────────────────────────────────────────────
+  const answerModeBlock =
+    p.answerMode === "funnel_to_learner"
+      ? `**Answer mode: Partial knowledge (confidence low)**
+- Answer briefly what is known
+- If knowledge is thin on a specific area, acknowledge it plainly
+- Add this tip exactly once per conversation (not on every message): "The more you teach the Learner about ${p.productName}, the better my answers get — head to the Chat tab to add more."
+- Never refuse to answer entirely — give what is available`
+      : p.answerMode === "answer_with_caveat"
+      ? `**Answer mode: Building knowledge (confidence building)**
+- Answer fully what is known
+- If a specific area has no data: "I don't have detail on that yet — it hasn't been captured in the knowledge base."
+- One caveat maximum per response — do not pepper every sentence with uncertainty
+- No tip or funneling needed`
+      : `**Answer mode: Established knowledge (confidence high)**
+- Answer cleanly and confidently
+- No hedging, no caveats, no uncertainty language
+- The KB is solid — treat it as authoritative`;
+
+  const firstUseBlock =
+    p.isFirstExplainerUse && p.suggestedQuestions.length > 0
+      ? `\n**First use — wow moment**
+After your opening response text, output the suggested questions in this exact format — no extra text inside or after the block:
+<suggested_questions>
+${p.suggestedQuestions.join("\n")}
+</suggested_questions>
+Show this once only — isFirstExplainerUse will be false on subsequent turns.\n`
+      : "";
+
+  return `You are the Explainer for ${p.productName} — an AI that answers questions about this product from its knowledge base.
+
+## PRODUCT KNOWLEDGE BASE
+${p.pkbContext}
+${p.orgContext ? `\n## ORGANISATION CONTEXT\n${p.orgContext}\n` : ""}
+## BEHAVIOURAL RULES
+
+${answerModeBlock}
+${firstUseBlock}
+**Core rules**
+- Answer from the knowledge base above — do not invent or infer beyond what is stored
+- If something is not in the KB: "I don't have that information yet"
+- Never mention field paths, PKB internals, or technical KB structure
+- Keep answers conversational — not bullet-heavy unless the question calls for it
+- Reference personas naturally when relevant: "Your primary users tend to be..."
+- One follow-up question maximum if clarification would genuinely help`;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// product_chat: streamExplainProduct (called by /explain route)
+// ──────────────────────────────────────────────────────────────────────────────
 
 export async function* streamExplainProduct(
   context: AgentContext,
   question: string,
-  overrideEnabled: boolean = false
+  explainerCtx?: ExplainerContext,
 ): AsyncGenerator<string> {
-  const pkb = loadPKB(context.sessionId);
-  if (!pkb) {
-    throw new Error("PKB not found");
-  }
+  const { orgPKB, productPKB: pkb } = await loadCombinedContext(context);
+  const enrichedContext = buildAgentContext(context, pkb, orgPKB);
+  const answerMode = getAnswerMode(enrichedContext.kb.confidenceScore);
+  const pkbContext = formatPKBForContext(pkb);
+  const orgContext = buildOrgContext(orgPKB);
 
-  const pkbSnapshot = formatPKBForContext(pkb);
-  const declinedFields = (pkb.meta?.inputs as any)?.declined_fields || [];
+  const systemPrompt = buildExplainerSystemPrompt({
+    surface: explainerCtx?.surface ?? "product_chat",
+    answerMode,
+    productName: enrichedContext.productName,
+    orgName: enrichedContext.orgName,
+    isFirstExplainerUse: explainerCtx?.isFirstExplainerUse ?? false,
+    suggestedQuestions: explainerCtx?.suggestedQuestions ?? [],
+    pkbContext,
+    orgContext,
+  });
 
-  let modeContext = "";
-  if (overrideEnabled && pkb.derived_insights?.confidence?.level !== "high") {
-    modeContext = `
-IMPORTANT: This is operating in OVERRIDE MODE with partial knowledge.
-The confidence level is: ${pkb.derived_insights?.confidence?.level || "low"}
-Be upfront about limitations and acknowledge that some information may be incomplete.
-`;
-  }
-
-  const declinedContext = declinedFields.length > 0
-    ? `\n\nDECLINED FIELDS (the product owner chose not to provide this information):\n${declinedFields.join("\n")}\n`
-    : "";
-
-  const userPrompt = `Based on the following Product Knowledge Base, answer this question:
-${modeContext}
-QUESTION: ${question}
-
-PRODUCT KNOWLEDGE BASE:
-${pkbSnapshot}${declinedContext}
-
-Provide a helpful, accurate answer based only on the information in the PKB. If the answer isn't in the PKB or was declined, say so politely.`;
-
-  for await (const chunk of streamLLM(EXPLAINER_SYSTEM_PROMPT, userPrompt, {
-    maxTokens: 2048,
-  })) {
+  for await (const chunk of streamLLM(systemPrompt, question, { maxTokens: 2048 })) {
     yield chunk;
   }
 }
 
-function formatPKBForContext(pkb: PKB): string {
+// ──────────────────────────────────────────────────────────────────────────────
+// explainProduct (non-streaming — kept for compatibility)
+// ──────────────────────────────────────────────────────────────────────────────
+
+export async function explainProduct(
+  context: AgentContext,
+  question: string,
+  explainerCtx?: ExplainerContext,
+): Promise<string> {
+  const { orgPKB, productPKB: pkb } = await loadCombinedContext(context);
+  const enrichedContext = buildAgentContext(context, pkb, orgPKB);
+  const answerMode = getAnswerMode(enrichedContext.kb.confidenceScore);
+  const pkbContext = formatPKBForContext(pkb);
+  const orgContext = buildOrgContext(orgPKB);
+
+  const systemPrompt = buildExplainerSystemPrompt({
+    surface: explainerCtx?.surface ?? "product_chat",
+    answerMode,
+    productName: enrichedContext.productName,
+    orgName: enrichedContext.orgName,
+    isFirstExplainerUse: explainerCtx?.isFirstExplainerUse ?? false,
+    suggestedQuestions: explainerCtx?.suggestedQuestions ?? [],
+    pkbContext,
+    orgContext,
+  });
+
+  return callLLM(systemPrompt, question, { maxTokens: 2048 });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// explainCIChat — CI dashboard chat (dashboard_chat + app_guide surfaces)
+// ──────────────────────────────────────────────────────────────────────────────
+
+export async function explainCIChat(
+  orgPKB: OrgPKB,
+  orgName: string,
+  message: string,
+  surface: "dashboard_chat" | "app_guide",
+  allProductSummaries?: ProductSummary[],
+): Promise<string> {
+  const orgContext = buildOrgContext(orgPKB);
+
+  const systemPrompt = buildExplainerSystemPrompt({
+    surface,
+    answerMode: "answer_clean",
+    productName: "",
+    orgName,
+    isFirstExplainerUse: false,
+    suggestedQuestions: [],
+    pkbContext: "",
+    orgContext,
+    allProductSummaries,
+  });
+
+  return callLLM(systemPrompt, message, { maxTokens: 1024 });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// formatPKBForContext — exported for route use (dashboard product summaries)
+// ──────────────────────────────────────────────────────────────────────────────
+
+export function formatPKBForContext(pkb: PKB): string {
   const sections: string[] = [];
 
   if (pkb.meta) {
@@ -165,14 +314,14 @@ ${pkb.meta.primary_mode ? `- Primary Focus: ${pkb.meta.primary_mode.toUpperCase(
   }
 
   if (pkb.facts?.use_cases && Array.isArray(pkb.facts.use_cases) && pkb.facts.use_cases.length > 0) {
-    const useCases = pkb.facts.use_cases.map((uc, i) => 
+    const useCases = pkb.facts.use_cases.map((uc, i) =>
       `${i + 1}. ${extractValue(uc.name)}: ${extractValue(uc.outcome)}`
     ).join("\n");
     sections.push(`## Use Cases\n${useCases}`);
   }
 
   if (pkb.facts?.features && Array.isArray(pkb.facts.features) && pkb.facts.features.length > 0) {
-    const features = pkb.facts.features.map((f, i) => 
+    const features = pkb.facts.features.map((f, i) =>
       `${i + 1}. ${extractValue(f.name)}: ${extractValue(f.what_it_does)}`
     ).join("\n");
     sections.push(`## Features\n${features}`);

@@ -1,23 +1,9 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
 import axios from "axios";
 import * as cheerio from "cheerio";
-
-const UPLOADS_DIR = path.join(process.cwd(), "uploads");
-
-function ensureUploadsDir(): void {
-  if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  }
-}
-
-export function getUploadPath(sessionId: string, filename: string): string {
-  const sessionUploadsDir = path.join(UPLOADS_DIR, sessionId);
-  if (!fs.existsSync(sessionUploadsDir)) {
-    fs.mkdirSync(sessionUploadsDir, { recursive: true });
-  }
-  return path.join(sessionUploadsDir, filename);
-}
+import { supabase, UPLOADS_BUCKET } from "../supabase-storage";
 
 export async function extractTextFromFile(filePath: string): Promise<string> {
   const ext = path.extname(filePath).toLowerCase();
@@ -58,7 +44,7 @@ async function extractFromPDF(filePath: string): Promise<string> {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       const pageText = textContent.items
-        .map((item: { str?: string }) => item.str || "")
+        .map((item: any) => item.str || "")
         .join(" ");
       fullText += pageText + "\n";
     }
@@ -374,18 +360,57 @@ export function chunkText(text: string, maxChunkSize: number = 4000): string[] {
 }
 
 export async function processUploadedFile(
-  sessionId: string,
+  productId: string,
   file: Express.Multer.File
 ): Promise<{ text: string; filename: string }> {
-  ensureUploadsDir();
-  
   const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
-  const uploadPath = getUploadPath(sessionId, safeName);
-  
-  fs.writeFileSync(uploadPath, file.buffer);
-  
-  const text = await extractTextFromFile(uploadPath);
-  const cleanedText = cleanText(text);
-  
+
+  // Write to OS temp dir for text extraction (PDF/DOCX parsers need a file path)
+  const tmpPath = path.join(os.tmpdir(), `pkb_upload_${Date.now()}_${safeName}`);
+  fs.writeFileSync(tmpPath, file.buffer);
+
+  let cleanedText: string;
+  try {
+    const text = await extractTextFromFile(tmpPath);
+    cleanedText = cleanText(text);
+  } finally {
+    try { fs.unlinkSync(tmpPath); } catch {}
+  }
+
+  // Upload file buffer to Supabase Storage for persistent storage
+  const { error } = await supabase.storage
+    .from(UPLOADS_BUCKET)
+    .upload(`product_${productId}/${safeName}`, file.buffer, {
+      contentType: file.mimetype,
+      upsert: true,
+    });
+  if (error) {
+    console.error(`[ingestion] Failed to upload ${safeName} to Supabase: ${error.message}`);
+  }
+
   return { text: cleanedText, filename: safeName };
+}
+
+// Downloads a stored product file from Supabase and extracts its text.
+// Used by the /process pipeline to re-read documents for extraction.
+export async function extractTextFromStoredFile(productId: string, filename: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from(UPLOADS_BUCKET)
+    .download(`product_${productId}/${filename}`);
+
+  if (error || !data) {
+    throw new Error(`File not found in storage: product_${productId}/${filename}`);
+  }
+
+  const buffer = Buffer.from(await data.arrayBuffer());
+  const ext = path.extname(filename).toLowerCase();
+  const tmpPath = path.join(os.tmpdir(), `pkb_read_${Date.now()}_${filename}`);
+  fs.writeFileSync(tmpPath, buffer);
+
+  try {
+    const text = await extractTextFromFile(tmpPath);
+    return cleanText(text);
+  } finally {
+    try { fs.unlinkSync(tmpPath); } catch {}
+  }
 }

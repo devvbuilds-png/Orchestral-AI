@@ -108,43 +108,9 @@ export function ChatInterface({
 
   return (
     <div className={cn("flex flex-col h-full", className)} data-testid="chat-interface">
-      {session.confidence_level && session.state !== "product_type_selection" && (
-        <ConfidenceBar
-          level={session.confidence_level}
-          score={session.confidence_score || 0}
-          reasons={confidenceReasons}
-          improvements={confidenceImprovements}
-        />
-      )}
-
-      <div className="flex items-center justify-between gap-4 p-4 border-b flex-wrap">
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="font-semibold text-lg">
-              {session.product_name || "New Product Analysis"}
-            </h1>
-            {session.product_type && (
-              <p className="text-sm text-muted-foreground">
-                {session.product_type.toUpperCase()}
-                {session.primary_mode && ` (${session.primary_mode.toUpperCase()} primary)`}
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <ModeToggle
-            mode={session.chat_mode}
-            onModeChange={handleModeChange}
-            explainerEnabled={explainerEnabled}
-            overrideEnabled={overrideEnabled}
-            onOverrideChange={onOverrideChange}
-            confidenceLevel={session.confidence_level}
-          />
-        </div>
-      </div>
 
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-        <div className="max-w-3xl mx-auto space-y-4">
+        <div className="max-w-3xl mx-auto space-y-4 pb-2">
           {showStorytellingSummary && storytellingSummary && session.confidence_level === "high" && (
             <StorytellingSummary
               summary={storytellingSummary}
@@ -152,6 +118,15 @@ export function ChatInterface({
               confidenceLevel={session.confidence_level}
               className="mb-6"
             />
+          )}
+
+          {messages.length === 0 && !isProcessing && (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+              <div className="floating-icon h-12 w-12">
+                <Loader2 className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <p className="text-sm text-muted-foreground">Starting a new conversation…</p>
+            </div>
           )}
 
           {messages.map((message) => (
@@ -182,7 +157,7 @@ export function ChatInterface({
             <div className="flex items-center justify-center py-8">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span>Processing...</span>
+                <span>Processing…</span>
               </div>
             </div>
           )}
@@ -191,24 +166,34 @@ export function ChatInterface({
         </div>
       </ScrollArea>
 
-      <div className="border-t p-4">
-        <div className="max-w-3xl mx-auto space-y-3">
-          {session.state === "gap_interview" && onRecheckGaps && (
-            <div className="flex justify-center">
+      <div className="border-t border-border p-3">
+        <div className="max-w-3xl mx-auto space-y-2">
+          <div className="flex items-center justify-between">
+            <ModeToggle
+              mode={session.chat_mode}
+              onModeChange={handleModeChange}
+              explainerEnabled={explainerEnabled}
+              overrideEnabled={overrideEnabled}
+              onOverrideChange={onOverrideChange}
+              confidenceLevel={session.confidence_level}
+            />
+            {session.state === "gap_interview" && onRecheckGaps && (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 onClick={onRecheckGaps}
                 disabled={isProcessing}
+                className="h-7 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
                 data-testid="button-recheck-gaps"
               >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Recheck Gaps
+                <RefreshCw className="h-3.5 w-3.5" />
+                Recheck gaps
               </Button>
-            </div>
-          )}
+            )}
+          </div>
           <ChatInput
             onSend={onSendMessage}
+            onFilesSelected={onFilesSelected}
             disabled={isInputDisabled}
             placeholder={getPlaceholder()}
           />

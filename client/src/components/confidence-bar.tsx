@@ -46,26 +46,26 @@ export function ConfidenceBar({
     low: {
       label: "Low",
       icon: AlertCircle,
-      barColor: "bg-red-500",
-      pillBg: "bg-red-500/10 dark:bg-red-500/20",
-      pillText: "text-red-700 dark:text-red-400",
-      pillBorder: "border-red-200 dark:border-red-800",
+      barColor: "bg-confidence-low",
+      pillBg: "bg-confidence-low/10",
+      pillText: "text-confidence-low",
+      pillBorder: "border-confidence-low/30",
     },
     medium: {
       label: "Medium",
       icon: AlertTriangle,
-      barColor: "bg-yellow-500",
-      pillBg: "bg-yellow-500/10 dark:bg-yellow-500/20",
-      pillText: "text-yellow-700 dark:text-yellow-400",
-      pillBorder: "border-yellow-200 dark:border-yellow-800",
+      barColor: "bg-confidence-medium",
+      pillBg: "bg-confidence-medium/10",
+      pillText: "text-confidence-medium",
+      pillBorder: "border-confidence-medium/30",
     },
     high: {
       label: "High",
       icon: CheckCircle2,
-      barColor: "bg-emerald-500",
-      pillBg: "bg-emerald-500/10 dark:bg-emerald-500/20",
-      pillText: "text-emerald-700 dark:text-emerald-400",
-      pillBorder: "border-emerald-200 dark:border-emerald-800",
+      barColor: "bg-confidence-high",
+      pillBg: "bg-confidence-high/10",
+      pillText: "text-confidence-high",
+      pillBorder: "border-confidence-high/30",
     },
   };
 
@@ -130,7 +130,7 @@ export function ConfidenceBar({
           <span className="font-medium text-sm whitespace-nowrap">
             {label} Confidence
           </span>
-          <div className="flex-1 h-2 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden min-w-[60px] max-w-[120px]">
+          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden min-w-[60px] max-w-[120px]">
             <div
               className={cn("h-full rounded-full transition-all duration-500", barColor)}
               style={{ width: `${Math.max(score, 5)}%` }}
@@ -181,7 +181,7 @@ export function ConfidenceBar({
             <div className="space-y-2">
               <h4 className="font-semibold text-sm flex items-center gap-2">
                 {level === "high" ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  <CheckCircle2 className="h-4 w-4 text-confidence-high" />
                 ) : (
                   <TrendingUp className="h-4 w-4 text-primary" />
                 )}
@@ -190,7 +190,7 @@ export function ConfidenceBar({
               <ul className="text-sm text-muted-foreground space-y-1.5">
                 {displayImprovements.map((improvement, i) => (
                   <li key={i} className="flex items-start gap-2">
-                    <Lightbulb className="h-3.5 w-3.5 text-yellow-500 mt-0.5 flex-shrink-0" />
+                    <Lightbulb className="h-3.5 w-3.5 text-glow-amber mt-0.5 flex-shrink-0" />
                     <span>{improvement}</span>
                   </li>
                 ))}

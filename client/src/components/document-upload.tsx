@@ -320,7 +320,7 @@ export function DocumentUpload({
               </div>
               <div className="flex items-center gap-2">
                 {file.status === "success" && (
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                  <Badge variant="outline" className="bg-confidence-high/10 text-confidence-high border-confidence-high/20">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
                     Done
                   </Badge>

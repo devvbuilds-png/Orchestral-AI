@@ -1,5 +1,6 @@
-import { callLLM, parseJSONResponse, type AgentContext } from "./base-agent";
-import type { ProposedUpdate, Source } from "@shared/schema";
+import { callLLM, parseJSONResponse, buildOrgContext, type AgentContext } from "./base-agent";
+import { loadOrgPKB } from "../services/pkb-storage";
+import type { ProposedUpdate, Source, OrgPKB } from "@shared/schema";
 
 const EXTRACTION_SYSTEM_PROMPT = `You are an expert product analyst that extracts structured facts from product documentation, websites, and other materials.
 
@@ -78,14 +79,17 @@ export async function extractInformation(
   context: AgentContext,
   text: string,
   sourceRef: string,
-  sourceType: "doc" | "url" = "doc"
+  sourceType: "doc" | "url" = "doc",
+  orgPKB?: OrgPKB
 ): Promise<ProposedUpdate[]> {
   const productTypeContext = context.productType === "hybrid"
     ? `This is a hybrid product (both B2B and B2C) with ${context.primaryMode?.toUpperCase() || "B2B"} as primary.`
     : `This is a ${context.productType.toUpperCase()} product.`;
 
-  const userPrompt = `${productTypeContext}
+  const orgContext = orgPKB ? buildOrgContext(orgPKB) : "";
 
+  const userPrompt = `${productTypeContext}
+${orgContext ? `\n${orgContext}\nUse the organisation context above to disambiguate ambiguous facts during extraction.\n` : ""}
 Extract structured facts from the following content. Be thorough but only extract what is explicitly stated.
 
 SOURCE: ${sourceRef}
@@ -128,7 +132,7 @@ Return a JSON object with a "facts" array containing all extracted facts.`;
       metadata: {
         proposed_by: "extractor" as const,
         timestamp: now,
-        session_id: context.sessionId,
+        session_id: context.productId,
       },
     };
   });
@@ -151,11 +155,13 @@ export async function extractFromMultipleChunks(
   sourceRef: string,
   sourceType: "doc" | "url" = "doc"
 ): Promise<ProposedUpdate[]> {
+  // Load org PKB once for the entire extraction batch
+  const orgPKB = await loadOrgPKB(context.orgId);
   const allUpdates: ProposedUpdate[] = [];
 
   for (let i = 0; i < chunks.length; i++) {
     const chunkRef = chunks.length > 1 ? `${sourceRef} (part ${i + 1}/${chunks.length})` : sourceRef;
-    const updates = await extractInformation(context, chunks[i], chunkRef, sourceType);
+    const updates = await extractInformation(context, chunks[i], chunkRef, sourceType, orgPKB);
     allUpdates.push(...updates);
   }
 

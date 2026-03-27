@@ -43,15 +43,15 @@ export function StorytellingSummary({
       icon: Users,
       title: "Who It's For",
       content: summary.who_its_for,
-      color: "text-blue-600 dark:text-blue-400",
-      bgColor: "bg-blue-500/10",
+      color: "text-glow-blue",
+      bgColor: "bg-glow-blue/10",
     },
     {
       icon: Trophy,
       title: "Why It Wins",
       content: summary.why_it_wins,
-      color: "text-emerald-600 dark:text-emerald-400",
-      bgColor: "bg-emerald-500/10",
+      color: "text-glow-emerald",
+      bgColor: "bg-glow-emerald/10",
     },
   ];
 
@@ -72,8 +72,8 @@ export function StorytellingSummary({
             variant="outline" 
             className={cn(
               "px-3 py-1",
-              confidenceLevel === "high" && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-              confidenceLevel === "medium" && "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20",
+              confidenceLevel === "high" && "bg-confidence-high/10 text-confidence-high border-confidence-high/20",
+              confidenceLevel === "medium" && "bg-confidence-medium/10 text-confidence-medium border-confidence-medium/20",
               confidenceLevel === "low" && "bg-destructive/10 text-destructive border-destructive/20"
             )}
           >

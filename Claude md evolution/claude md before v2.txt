@@ -1,0 +1,325 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+**Orchestral-AI** is an AI-powered sales orchestration system designed to automate the full sales workflow. The project follows a multi-phase rollout approach.
+
+### Current Phase: V1 - Persona-Aware PKC & Knowledge Governance
+
+Previous phase was V0 :
+
+V0 is the foundational "brain" that all future sales agents will query. It extracts, validates, and stores product knowledge from documents, URLs, and founder interviews into a structured Product Knowledge Base (PKB).
+
+**Key Innovation:** Future agents (V1+) won't re-learn the product—they query the PKC as their single source of truth.
+
+## Build & Development Commands
+
+```bash
+npm run dev      # Development server with hot reload (port 5000)
+npm run build    # Production build (esbuild + Vite)
+npm start        # Run production build
+npm run check    # TypeScript type checking
+npm run db:push  # Push Drizzle schema to PostgreSQL
+```
+
+## Environment Setup
+
+Copy `.env.example` to `.env` and configure:
+- `OPENAI_API_KEY` - Your OpenAI API key
+- `DATABASE_URL` - PostgreSQL connection string (Docker: `orchestral-ai` database)
+- `PORT` - Server port (default: 5000)
+
+## Architecture
+
+### Tech Stack
+- **Frontend:** React 18, Vite, Wouter, TanStack Query, Tailwind CSS, shadcn/ui
+- **Backend:** Node.js, Express 5.x, TypeScript ES modules
+- **Database:** PostgreSQL via Drizzle ORM (users, conversations)
+- **PKB Storage:** File-based JSON with snapshots (not in database)
+- **AI:** OpenAI GPT-4o
+
+### Directory Structure
+```
+client/src/           # React frontend
+  components/         # UI (chat-interface, confidence-bar, session-sidebar)
+  lib/                # queryClient, session-store, utils
+server/               # Express backend
+  agents/             # AI agents (5 specialized + base-agent)
+  services/           # pkb-storage, pkc-curator, ingestion-service
+  routes.ts           # API endpoints
+shared/               # Isomorphic types and Zod schemas
+  schema.ts           # Database tables + validation
+pkb_store/            # File-based PKB JSON (per session)
+uploads/              # Uploaded documents (per session)
+```
+
+### Multi-Agent Pipeline
+
+Located in `server/agents/`:
+
+| Agent | File | Purpose |
+|-------|------|---------|
+| Base Agent | `base-agent.ts` | Shared utilities: `callLLM()`, `streamLLM()`, `parseJSONResponse()` |
+| Information Extractor | `information-extractor.ts` | Parse documents/URLs into structured facts with source tracking |
+| Product Synthesizer | `product-synthesizer.ts` | Generate insights and product briefs |
+| Gap Identifier | `gap-identifier.ts` | Analyze PKB completeness, prioritize missing info |
+| Product Interviewer | `product-interviewer.ts` | Conversational interviews to fill knowledge gaps |
+| Product Explainer | `product-explainer.ts` | Answer questions using PKB knowledge |
+
+### Data Flow
+
+1. User uploads documents or provides URLs
+2. **Ingestion Service** (`server/services/ingestion-service.ts`) extracts text
+3. **Information Extractor** identifies facts with source tracking
+4. **PKC Curator** (`server/services/pkc-curator.ts`) validates and stores in PKB
+5. **Product Synthesizer** generates insights
+6. **Gap Identifier** finds missing info → **Product Interviewer** fills gaps via chat
+
+### Session State Machine
+
+**V0 (implemented):**
+`product_type_selection` → `onboarding` → `learning` → `ready`
+
+**V1 (current build target):**
+
+`product_type_selection` → `onboarding` → `learning` → `persona_extraction` → `founder_review` → `ready`
+
+- `persona_extraction` — runs automatically after each ingestion batch
+- `founder_review` — inbox populated, founder resolves critical items
+- `ready` — requires: no critical inbox blocks + at least 1 confirmed persona + no pending sensitive fields. Can regress if new conflicts detected.
+
+**Chat Modes:**
+- **Learner:** Builds knowledge, asks gap-filling questions
+- **Explainer:** Answers questions from stored PKB knowledge
+
+### Storage Architecture
+
+- **PKB:** File-based JSON at `pkb_store/session_{id}/pkb.json` with timestamped snapshots
+- **Sessions:** Client-side localStorage (`pkb-sessions` key)
+- **Database:** PostgreSQL for users, conversations, messages (schema in `shared/schema.ts`)
+
+### PKB Schema (Product-Type Aware)
+
+**Core sections (V0, implemented):**
+`product_identity`, `value_proposition`, `target_users`, `use_cases[]`, 
+`features[]`, `pricing`, `differentiation`, `proof_assets`, 
+`constraints_assumptions`
+
+- **B2B products** get enterprise fields (sales cycles, decision-makers, procurement)
+- **B2C products** get consumer fields (user acquisition, retention, viral loops)
+
+**Per-fact fields (V0, implemented):**
+- `source_type`, `source_ref`, `evidence`, `captured_at`
+- Quality tags: `strong`, `ok`, `weak`
+
+**Per-fact fields (V1, build target):**
+- `lifecycle_status`: `asserted` | `evidenced` | `inferred` | `disputed` | `stale`
+- `sensitive`: boolean
+- `approved`: boolean — defaults `true` for non-sensitive, `false` for sensitive
+- `locked`: boolean
+- `do_not_ask`: boolean
+- `last_verified`: ISO timestamp
+- `audit_trail`: mutation log entry array
+
+**V1 top-level PKB additions:**
+- `personas[]` — structured persona objects (see V1 section)
+- `icps[]` — structured ICP objects (see V1 section)
+- `mappings` — persona-to-fact relevance + persona-to-gap index
+- `review_inbox[]` — pending founder decisions
+
+### Confidence Scoring
+
+- **HIGH:** 75-100% of required fields populated
+- **MEDIUM:** 40-74%
+- **LOW:** 0-39%
+
+## API Endpoints
+
+All prefixed with `/api/sessions/`:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /init` | Initialize session PKB |
+| `POST /set-product-type` | Set B2B/B2C/Hybrid |
+| `GET /:sessionId` | Load session |
+| `POST /upload` | Upload file (PDF/DOCX/TXT/MD, 50MB limit) |
+| `POST /fetch-url` | Fetch and parse URL |
+| `POST /process` | Extract and synthesize facts |
+| `POST /chat` | Learner mode conversation |
+| `POST /explain` | Explainer mode Q&A |
+| `POST /recheck-gaps` | Re-identify knowledge gaps |
+
+## Key Patterns
+
+### Agent JSON Responses
+Agents return JSON. Use `parseJSONResponse()` from `base-agent.ts` to handle both markdown code blocks and raw JSON.
+
+### Source Tracking
+Every fact links back to its origin (document, URL, or interview) with evidence quotes and timestamps.
+
+### Refusal Handling
+Tracks declined fields so the system won't ask about them again.
+
+## Current build aim is V1 : 
+
+## V1 - Persona-Aware PKC & Knowledge Governance
+
+### What V1 Is
+V1 builds on V0 without adding new agent types. It upgrades the existing 
+system into a governed, persona-aware knowledge engine. No new agents. 
+No selling logic. Constraints, not creativity.
+
+V1 has three goals:
+1. Add knowledge governance — lifecycle states, conflict detection, 
+   sensitive field gating, staleness tracking
+2. Make the PKC persona-aware — structured ICP and persona objects 
+   extracted from founder inputs, not web research
+3. Give founders oversight — a review UI to approve, lock, and manage 
+   what the PKC knows and exposes
+
+### Build Phases (do not skip ahead)
+- Phase 1: Governance Layer (lifecycle states + sensitive field blocking 
+  + conflict detection)
+- Phase 2: Persona Extraction + Synthesis (persona/ICP objects + 
+  mappable layer)
+- Phase 3: Founder Review Inbox (UI + inbox state)
+- Phase 4: PKC Query API (endpoints for downstream V2 agents)
+
+
+### Current Phase
+Phase 4 — PKC Query API (V2 Agent Interface)
+// Do not build until V2 planning is complete
+
+### V1 Schema Changes Coming
+Every fact in the PKB will gain:
+- lifecycle_status: "asserted" | "evidenced" | "inferred" | 
+  "disputed" | "stale"
+- sensitive: boolean
+- approved: boolean (defaults true for non-sensitive, false for sensitive)
+- locked: boolean
+- do_not_ask: boolean
+- last_verified: ISO timestamp
+- audit_trail: array of mutation log entries
+
+### Sensitive Fields (Hard Gate)
+These fields can be extracted and proposed but NEVER auto-committed 
+and NEVER exposed to downstream agents without explicit founder approval:
+- pricing (model, tiers, numbers, discounts)
+- customer_names (references, case studies)
+- security_claims (SOC2, ISO, compliance, data handling)
+- roadmap (forward-looking statements)
+
+### Lifecycle State Transition Rules
+- asserted → evidenced: when a doc/URL supports the same claim
+- any → disputed: when a new source contradicts an existing claim 
+  on the same field_path
+- any → stale: when last_verified exceeds the staleness threshold 
+  for that field category
+- disputed → asserted/evidenced: when founder resolves the conflict
+- stale → asserted: when founder re-confirms the value
+
+### Staleness Thresholds (days)
+- pricing: 30
+- roadmap: 30
+- competitor_names: 60
+- security_claims: 90
+- positioning: 90
+- customer_names: 180
+
+### Persona Schema (canonical shape — build generically)
+// EXAMPLE VALUES ARE ILLUSTRATIVE ONLY
+// Build the schema to accept any product, any persona type
+// Never hardcode CTO, CFO, or any specific role as a default
+{
+  persona_id: string,           // generated slug
+  name: string,                 // human-readable label
+  type: "buyer_persona" | "user_persona" | "influencer" | 
+        "economic_buyer" | "gatekeeper",
+  status: "active" | "inactive" | "candidate",
+  context: {
+    company_stage: string[],
+    company_size: string[],
+    region: string[]
+  },
+  goals: { text: string, priority: "high" | "medium" | "low" }[],
+  pains: { text: string, severity: "high" | "medium" | "low" }[],
+  objections: { text: string, frequency: "common" | "occasional" }[],
+  buying_triggers: string[],
+  success_metrics: string[],
+  evidence: { source_id: string, quote: string, field_ref: string }[],
+  lifecycle_status: "asserted" | "evidenced" | "inferred",
+  confidence: number           // 0-1
+}
+
+### ICP Schema (canonical shape — build generically)
+// EXAMPLE VALUES ARE ILLUSTRATIVE ONLY
+// Never hardcode industries, geographies, or tool names as defaults
+{
+  icp_id: string,
+  segment_type: "b2b" | "b2c" | "hybrid",
+  firmographics: {
+    company_size: string[],
+    industries: string[],
+    geography: string[]
+  },
+  technographics: {
+    must_have_integrations: string[],
+    deployment_preferences: string[],
+    security_requirements: string[]
+  },
+  buying_context: {
+    buyer_roles: string[],
+    budget_owner: string[],
+    sales_motion: string[]
+  },
+  not_for: string[],           // categorical exclusions
+  disqualifiers: string[],     // contextual disqualifiers
+  lifecycle_status: "asserted" | "evidenced" | "inferred",
+  confidence: number,
+  evidence: { source_id: string, quote: string, field_ref: string }[]
+}
+
+### Persona Rules
+- Max 3 active personas at any time
+- Additional personas exist as "candidate" or "inactive"
+- Founder confirms/demotes — never creates manually
+- Every persona must match one of the 5 bounded types
+- Ranked by: evidence strength → decision power → frequency
+
+
+### Ready State (V1 Definition)
+A session is "ready" when:
+- No unresolved Critical inbox items
+- At least 1 active persona confirmed
+- No sensitive fields in pending state
+- At least 1 ICP defined (inferred is acceptable)
+"Ready" can regress if new conflicts are detected or critical fields go stale.
+
+### V0 Migration (Lazy Upgrade)
+Existing V0 PKB files are upgraded on first access, not batch-migrated:
+- Facts with no lifecycle_status → default based on source type
+  (founder interview → "asserted", doc/URL → "evidenced", derived → "inferred")
+- Facts with no sensitivity flag → run classifier, propose flags
+- Facts with no approved flag → true for non-sensitive, false for sensitive
+- No personas → trigger persona_extraction pass on existing content
+- No audit trail → create bootstrap entry with migration timestamp
+
+### PKC Query API (Phase 4 — do not build yet)
+Downstream V2 agents will query PKC via these endpoints.
+Do not implement until Phase 3 is complete.
+GET /pkc/personas/active
+GET /pkc/persona/:id
+GET /pkc/facts/by-persona/:id
+GET /pkc/gaps/by-persona/:id
+GET /pkc/icp/:id
+GET /pkc/coverage/by-icp/:id
+
+### What V1 Does NOT Do
+- No new agent types
+- No web research or external data fetching
+- No CRM workflows
+- No sales copy approval
+- No multi-user permissions
+- No selling logic of any kind

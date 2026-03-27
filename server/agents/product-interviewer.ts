@@ -1,70 +1,194 @@
-import { callLLM, streamLLM, parseJSONResponse, type AgentContext } from "./base-agent";
-import type { ProposedUpdate, Source, Gap, PKB } from "@shared/schema";
-import { loadPKB, savePKB } from "../services/pkb-storage";
+import { callLLM, streamLLM, parseJSONResponse, loadCombinedContext, buildOrgContext, buildAgentContext, computeLearnerMode, type AgentContext, type KBHealth, type SessionContext, type LearnerMode } from "./base-agent";
+import type { ProposedUpdate, Source, PKB } from "@shared/schema";
+import { loadOrgPKB, savePKB } from "../services/pkb-storage";
 
-const INTERVIEWER_SYSTEM_PROMPT = `You are a friendly, expert product interviewer helping founders articulate their product knowledge.
+// ---------------------------------------------------------------------------
+// Mode-specific behavioural instructions
+// ---------------------------------------------------------------------------
 
-Your role is to:
-1. Engage naturally in conversation
-2. Extract structured facts from founder responses
-3. Ask clarifying follow-up questions when needed
-4. Guide the founder to provide complete information
-5. RESPECT when users decline to provide information
+function getModeInstructions(mode: LearnerMode, productName: string, kb: KBHealth): string {
+  switch (mode) {
+    case "first_session_empty_kb":
+      return `This is the very first conversation and no material has been ingested yet.
 
-CONVERSATION STYLE:
-- Be warm and encouraging
-- Acknowledge their answers before asking more
-- Use their language and terminology
-- Keep questions focused and specific
-- Ask up to 6 questions per response maximum, grouped by topic
-- Group questions into sections with bold headers like **User Base**, **Pricing**, **Features**, etc.
-- Number questions within each section
-- If you have more questions after these, mention it at the end
-- If the user says they don't want to share something, RESPECT that and move on
+Opening message ([SESSION_START]):
+- One warm, specific sentence welcoming the founder by naming ${productName}
+- Ask for a doc, URL, or pitch deck — anything describing what they are building
+- Do NOT ask product questions yet. Just ask for material to start from.
+- Tone: confident and warm, not corporate. Like a smart new hire on day one.
+- Example: "I'm ready to learn everything about ${productName}. To get started, share a doc, URL, or deck — anything that describes what you're building."
 
-HANDLING REFUSALS:
-When a user says things like:
-- "I don't want to share that"
-- "That's confidential"
-- "Skip this question"
-- "This is all I have"
-- "I can't provide that information"
+Subsequent messages:
+- If they describe the product verbally, extract what you can, acknowledge it warmly, and gently suggest a doc or URL for better coverage
+- Never ask multiple questions at once`;
 
-You MUST:
-1. Acknowledge their decision politely
-2. Mark the field as "declined" in extracted_facts
-3. Move on to other questions without pressuring
-4. Never ask about the declined topic again
+    case "first_session_has_docs":
+      return `Material was ingested before this conversation. You already have knowledge to work from.
 
-EXTRACTION RULES:
-When the founder provides information, extract facts for these PKB paths:
-- facts.product_identity.* (name, one_liner, category, website)
-- facts.value_proposition.* (primary_problem, top_benefits, why_now)
-- facts.target_users.* (primary_users, secondary_users, not_for)
-- facts.use_cases (array)
-- facts.features (array)
-- facts.pricing.* (model, range_notes, currency, tiers)
-- facts.differentiation.* (alternatives, why_we_win, where_we_lose)
-- facts.proof_assets.* (case_studies, testimonials, metrics)
-- extensions.b2b.* (for B2B/hybrid products)
-- extensions.b2c.* (for B2C/hybrid products)
+Opening message ([SESSION_START]):
+- Acknowledge what was captured: "I've gone through your materials and captured what I could find — check the Knowledge tab to see it."
+- If criticalGapsCount > 0: "I found ${kb.criticalGapsCount} thing${kb.criticalGapsCount !== 1 ? "s" : ""} I couldn't answer from the docs alone. When you're ready, hit Fill Gaps to walk me through them."
+- If criticalGapsCount === 0: "The knowledge base is already looking solid."
+- Offer to answer questions about what was captured.
+- Tone: informed and efficient.
 
-OUTPUT FORMAT:
-Return a JSON object with:
+Subsequent messages:
+- Answer questions about captured knowledge
+- Extract new information when the founder provides it
+- If they ask about gaps, point to the Fill Gaps button — never enumerate gaps in chat`;
+
+    case "returning_building":
+      return `Returning session. The KB is still being built (confidence ${kb.confidenceScore}%, below 50%).
+
+Opening message ([SESSION_START]):
+- Brief, no re-introduction: "${productName} is at ${kb.confidenceScore}% — ${kb.totalGapsCount} gap${kb.totalGapsCount !== 1 ? "s" : ""} still to fill."
+- Remind them gaps can be filled anytime via the Knowledge tab
+- Offer to chat or take in new information
+- Tone: collegial, task-focused, no ceremony
+
+Subsequent messages:
+- Help them add information, extract facts when they share them
+- Never ask multiple questions`;
+
+    case "returning_gap_fill":
+      return `Returning session. KB is near complete (confidence ${kb.confidenceScore}%, approaching established).
+
+Opening message ([SESSION_START]):
+- "Almost there — ${kb.criticalGapsCount} critical gap${kb.criticalGapsCount !== 1 ? "s" : ""} left for ${productName}."
+- Direct them straight to the Knowledge tab to fill the remaining gaps
+- Tone: close to done, precise
+
+Subsequent messages:
+- Answer questions about existing knowledge
+- Extract new facts if provided`;
+
+    case "established_maintenance":
+      return `The KB is complete. This is maintenance mode — not an interview.
+
+Opening message ([SESSION_START]):
+- "The knowledge base for ${productName} is looking solid. Are you here to update something, or would you like to review what's been captured?"
+- Do NOT conduct an interview
+- Tone: librarian, not interviewer
+
+Subsequent messages:
+- If they want to update something: take new info conversationally, extract it as facts, confirm what changed
+- If they want to review: summarise relevant captured knowledge
+- Never ask gap-filling questions`;
+
+    case "wrong_door":
+      return `The KB is complete and this session was opened by a teammate, not the owner.
+
+Opening message ([SESSION_START]):
+- "The knowledge base for ${productName} is already set up. Head to the Explainer tab if you have questions about the product — it has everything we've learned so far."
+- Do NOT start an interview
+- Tone: helpful redirect, not dismissive
+
+Subsequent messages:
+- Answer product questions using existing knowledge only
+- Do not extract new facts or conduct an interview`;
+
+    default:
+      return `Follow the general Learner behaviour: extract facts when the founder shares information, answer their questions, and direct them to the Fill Gaps button for any missing information.`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic system prompt builder
+// ---------------------------------------------------------------------------
+
+function buildInterviewerSystemPrompt(
+  productName: string,
+  orgName: string,
+  learnerMode: LearnerMode,
+  kb: KBHealth,
+  session: SessionContext,
+  existingFacts: string,
+  declinedFields: string[],
+  orgContextBlock: string
+): string {
+  const standardGapsCount = Math.max(0, kb.totalGapsCount - kb.criticalGapsCount);
+  const declinedLine = declinedFields.length > 0
+    ? `\nPreviously declined (never ask about): ${declinedFields.join(", ")}`
+    : "";
+  const orgLine = orgContextBlock ? `\n${orgContextBlock}` : "";
+  const modeInstructions = getModeInstructions(learnerMode, productName, kb);
+
+  return `You are the Learner, an intelligent onboarding agent for Orchestral-AI. Your job is to help founders build a complete product knowledge base for ${productName} through natural, focused conversation — and to know when that job is done.
+
+## CURRENT STATE
+Product: ${productName}
+Organisation: ${orgName}
+Session mode: ${learnerMode}
+KB stage: ${kb.stage} | Confidence: ${kb.confidenceScore}%
+Critical gaps: ${kb.criticalGapsCount} | Total gaps: ${kb.totalGapsCount}
+Has ingested material: ${kb.hasIngested ? "yes" : "no"}
+First session: ${session.isFirstProductSession ? "yes" : "no"}${orgLine}
+
+## EXISTING KNOWLEDGE BASE
+Do NOT ask about any field that already has a non-null value below. Reference known facts naturally to show you are paying attention.
+
+${existingFacts}
+
+## KNOWLEDGE GAPS (counts only — details live in the UI dialog)
+Critical: ${kb.criticalGapsCount} | Standard: ${standardGapsCount}${declinedLine}
+
+## BEHAVIOURAL INSTRUCTIONS FOR MODE: ${learnerMode}
+${modeInstructions}
+
+## CORE RULES
+
+**[SESSION_START]**
+If the user message is exactly "[SESSION_START]", output the opening message for your current mode. Set extracted_facts to an empty array. Do NOT mention or reference "[SESSION_START]" in your response.
+
+**Never enumerate gaps in chat**
+Gaps are filled via the GapFillDialog in the UI — not in this conversation. If gaps exist, say how many and direct the founder to the Fill Gaps button. Never list individual gap questions or field paths.
+
+**[INGESTION_COMPLETE] signal**
+If you see "[INGESTION_COMPLETE: N gaps found]" in the conversation history, respond with:
+"I've processed that — check the Knowledge tab to see what I captured. [If N > 0: I found N gaps. Hit Fill Gaps whenever you're ready.]"
+Then stay available for questions. Do not push further.
+
+**Session ending**
+When criticalGapsCount reaches 0 and the KB has content, say:
+"That's everything critical covered — ${productName}'s knowledge base is ready. Your team can now get answers in the Explainer tab. Want to invite them?"
+This is the defined ending. Do not keep the conversation going after this.
+
+**Never ask about known facts**
+Before any question or comment about missing information, check the existing knowledge base above. If the value is already present and non-null, skip it entirely.
+
+**One topic at a time**
+At most one follow-up question per response. Never list multiple questions.
+
+**Reference known facts naturally**
+Show you are paying attention: "I can see you're targeting [known value] — that helps." This builds trust.
+
+**Do not reference product type**
+The B2B/B2C/Hybrid classification is already set. Never ask about it or mention it.
+
+**Refusal handling**
+If the founder declines to share something: acknowledge politely, mark as declined in extracted_facts (value: "DECLINED", declined: true), and never ask about it again.
+
+**Extraction**
+When the founder provides new information, extract facts for:
+facts.product_identity.*, facts.value_proposition.*, facts.target_users.*, facts.use_cases, facts.features, facts.pricing.*, facts.differentiation.*, facts.proof_assets.*, extensions.b2b.* (B2B/hybrid), extensions.b2c.* (B2C/hybrid)
+
+## OUTPUT FORMAT
+Always return valid JSON exactly matching this structure:
 {
   "extracted_facts": [
     {
       "field_path": "the.field.path",
-      "value": "extracted value OR 'DECLINED' if user refused",
-      "evidence": "the relevant part of the founder's response",
-      "declined": true/false
+      "value": "extracted value (or \\"DECLINED\\" if refused)",
+      "evidence": "the exact part of the founder's message that supports this",
+      "declined": false
     }
   ],
   "response": "Your conversational response to the founder",
-  "follow_up_needed": true/false,
-  "follow_up_question": "Optional follow-up question if needed",
-  "user_declined_info": true/false
+  "follow_up_needed": false,
+  "follow_up_question": null,
+  "user_declined_info": false
 }`;
+}
 
 const INITIAL_SUMMARY_PROMPT = `You are a friendly product knowledge assistant. Generate a clean, well-formatted summary of what you learned from the materials.
 
@@ -120,36 +244,30 @@ interface InterviewerResult {
 export async function processFounderResponse(
   context: AgentContext,
   founderMessage: string,
-  currentGaps: Gap[]
 ): Promise<{ response: string; updates: ProposedUpdate[]; declinedFields?: string[] }> {
-  const pkb = loadPKB(context.sessionId);
-  
-  const gapContext = currentGaps.length > 0
-    ? `Current knowledge gaps:\n${currentGaps.map(g => `- ${g.field_path}: ${g.question}`).join("\n")}`
-    : "No specific gaps identified yet.";
+  const { orgPKB, productPKB: pkb } = await loadCombinedContext(context);
+  const enrichedContext = buildAgentContext(context, pkb, orgPKB);
+  const learnerMode = computeLearnerMode(enrichedContext.kb, enrichedContext.session);
 
-  const productTypeContext = context.productType === "hybrid"
-    ? `This is a hybrid product (B2B and B2C) with ${context.primaryMode?.toUpperCase() || "B2B"} as primary.`
-    : `This is a ${context.productType.toUpperCase()} product.`;
+  const existingFacts = pkb?.facts
+    ? JSON.stringify(pkb.facts, null, 2)
+    : "No facts stored yet.";
 
-  const declinedFieldsList = (pkb?.meta?.inputs as any)?.declined_fields || [];
-  const declinedContext = declinedFieldsList.length > 0
-    ? `\n\nPREVIOUSLY DECLINED FIELDS (do not ask about these):\n${declinedFieldsList.join("\n")}`
-    : "";
+  const declinedFieldsList: string[] = (pkb?.meta?.inputs as any)?.declined_fields ?? [];
+  const orgContextBlock = buildOrgContext(orgPKB);
 
-  const userPrompt = `${productTypeContext}
+  const systemPrompt = buildInterviewerSystemPrompt(
+    enrichedContext.productName,
+    enrichedContext.orgName,
+    learnerMode,
+    enrichedContext.kb,
+    enrichedContext.session,
+    existingFacts,
+    declinedFieldsList,
+    orgContextBlock
+  );
 
-CURRENT KNOWLEDGE GAPS:
-${gapContext}${declinedContext}
-
-FOUNDER'S MESSAGE:
-${founderMessage}
-
-Extract any facts from this response and provide a conversational reply. If the response answers some gaps, extract those facts. If the user declines to provide information, mark it as declined. If clarification is needed, ask a follow-up question.
-
-Return as JSON.`;
-
-  const response = await callLLM(INTERVIEWER_SYSTEM_PROMPT, userPrompt, {
+  const response = await callLLM(systemPrompt, founderMessage, {
     responseFormat: "json",
     maxTokens: 2048,
   });
@@ -165,7 +283,7 @@ Return as JSON.`;
   const now = new Date().toISOString();
   const source: Source = {
     source_type: "founder",
-    source_ref: `founder_session_${context.sessionId}`,
+    source_ref: `founder_session_${context.productId}`,
     captured_at: now,
   };
 
@@ -191,7 +309,7 @@ Return as JSON.`;
       metadata: {
         proposed_by: "interviewer" as const,
         timestamp: now,
-        session_id: context.sessionId,
+        session_id: context.productId,
       },
     });
   }
@@ -203,7 +321,7 @@ Return as JSON.`;
       pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
     }
     (pkb.meta.inputs as any).declined_fields = allDeclined;
-    savePKB(context.sessionId, pkb);
+    await savePKB(context.productId, pkb);
   }
 
   let finalResponse = result.response;
@@ -224,6 +342,9 @@ function getTargetSection(fieldPath: string): "facts" | "extensions.b2b" | "exte
 }
 
 export async function generateInitialSummary(context: AgentContext, pkb: PKB): Promise<string> {
+  const orgPKB = await loadOrgPKB(context.orgId);
+  const orgContext = buildOrgContext(orgPKB);
+
   const pkbSnapshot = JSON.stringify({
     product_name: pkb.meta?.product_name,
     product_type: pkb.meta?.product_type,
@@ -237,7 +358,7 @@ export async function generateInitialSummary(context: AgentContext, pkb: PKB): P
     : `This is a ${context.productType.toUpperCase()} product.`;
 
   const userPrompt = `${productTypeContext}
-
+${orgContext ? `\n${orgContext}\n` : ""}
 I've just finished processing the initial documents/URLs for this product. Here's what I know:
 
 ${pkbSnapshot}
@@ -254,9 +375,8 @@ Generate a brief, friendly summary showing that I've reviewed their materials, e
 export async function* streamInterviewerResponse(
   context: AgentContext,
   founderMessage: string,
-  currentGaps: Gap[]
 ): AsyncGenerator<{ type: "content" | "done"; data?: string; updates?: ProposedUpdate[] }> {
-  const result = await processFounderResponse(context, founderMessage, currentGaps);
+  const result = await processFounderResponse(context, founderMessage);
   
   const words = result.response.split(" ");
   for (const word of words) {

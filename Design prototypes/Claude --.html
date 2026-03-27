@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Orchestral-AI Redesign</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --coral: #E8714A;
+    --coral-bright: #F08060;
+    --coral-dim: rgba(232,113,74,0.10);
+    --coral-border: rgba(232,113,74,0.22);
+    --bg: #080B14;
+    --surface: #0D1120;
+    --surface2: #111827;
+    --surface3: #161E30;
+    --border: rgba(255,255,255,0.06);
+    --border2: rgba(255,255,255,0.10);
+    --text-primary: #F0F2FF;
+    --text-secondary: rgba(255,255,255,0.42);
+    --text-dim: rgba(255,255,255,0.22);
+    --green: #34D399;
+    --green-dim: rgba(52,211,153,0.10);
+    --green-border: rgba(52,211,153,0.20);
+    --amber: #FCD34D;
+    --amber-dim: rgba(252,211,77,0.10);
+    --red: #F87171;
+    --red-dim: rgba(248,113,113,0.10);
+    --red-border: rgba(248,113,113,0.20);
+    --blue: #60A5FA;
+    --blue-dim: rgba(96,165,250,0.10);
+  }
+
+  body { background: var(--bg); color: var(--text-primary); font-family: 'DM Mono', monospace; min-height: 100vh; overflow: hidden; }
+
+  /* ── VIEWS ── */
+  .view { display: none; height: 100vh; flex-direction: column; overflow: hidden; }
+  .view.active { display: flex; }
+
+  /* ═══════════════════════════════════════════
+     DASHBOARD VIEW
+  ═══════════════════════════════════════════ */
+  .dash-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px; height: 52px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .brand { display: flex; align-items: center; gap: 10px; }
+
+  .brand-logo {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--coral);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .brand-logo svg { width: 16px; height: 16px; }
+
+  .brand-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px; font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .btn-add {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 16px;
+    background: var(--coral); color: #fff;
+    border: none; border-radius: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; cursor: pointer;
+    letter-spacing: 0.03em;
+    transition: background 0.15s;
+  }
+  .btn-add:hover { background: var(--coral-bright); }
+  .btn-add svg { width: 12px; height: 12px; }
+
+  .dash-body { flex: 1; overflow-y: auto; padding: 32px 36px; }
+
+  .dash-toprow {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-bottom: 28px;
+  }
+
+  .dash-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 24px; font-weight: 700;
+    color: var(--text-primary); letter-spacing: -0.4px;
+  }
+
+  .dash-sub {
+    font-size: 10px; color: var(--coral);
+    margin-top: 4px; letter-spacing: 0.07em; opacity: 0.8;
+  }
+
+  .dash-count {
+    font-size: 10px; color: var(--text-secondary);
+    background: rgba(255,255,255,0.05);
+    padding: 4px 12px; border-radius: 20px;
+    letter-spacing: 0.04em;
+  }
+
+  /* SUMMARY CARDS */
+  .summary-row {
+    display: grid; grid-template-columns: repeat(4,1fr);
+    gap: 14px; margin-bottom: 32px;
+  }
+
+  .sum-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px 20px;
+    position: relative; overflow: hidden;
+  }
+
+  .sum-card::before {
+    content: ''; position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    border-radius: 14px 14px 0 0;
+  }
+  .sc-coral::before { background: linear-gradient(90deg,#E8714A,#F0A080); }
+  .sc-green::before { background: linear-gradient(90deg,#10B981,#34D399); }
+  .sc-amber::before { background: linear-gradient(90deg,#F59E0B,#FCD34D); }
+  .sc-red::before   { background: linear-gradient(90deg,#EF4444,#F87171); }
+
+  .sum-icon {
+    position: absolute; top: 16px; right: 16px;
+    width: 28px; height: 28px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sc-coral .sum-icon { background: var(--coral-dim); color: var(--coral); }
+  .sc-green .sum-icon { background: var(--green-dim); color: var(--green); }
+  .sc-amber .sum-icon { background: var(--amber-dim); color: var(--amber); }
+  .sc-red .sum-icon   { background: var(--red-dim);   color: var(--red);   }
+  .sum-icon svg { width: 14px; height: 14px; }
+
+  .sum-label {
+    font-size: 9px; letter-spacing: 0.10em;
+    text-transform: uppercase; color: var(--coral);
+    margin-bottom: 10px; opacity: 0.75;
+  }
+
+  .sum-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 28px; font-weight: 700;
+    color: var(--text-primary); line-height: 1;
+  }
+
+  .sum-sub {
+    font-size: 10px; color: var(--text-secondary);
+    margin-top: 6px; letter-spacing: 0.02em;
+  }
+
+  /* PRODUCT GRID */
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 18px;
+  }
+
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px; font-weight: 600; color: #C8CADC;
+  }
+
+  .product-grid {
+    display: grid; grid-template-columns: repeat(3,1fr); gap: 16px;
+  }
+
+  .product-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 22px;
+    cursor: pointer; position: relative; overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .product-card:hover { border-color: var(--coral-border); transform: translateY(-2px); }
+
+  .pc-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
+  .pc-identity { display: flex; align-items: center; gap: 12px; }
+
+  .pc-icon {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: var(--coral-dim); border: 1px solid var(--coral-border);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    color: var(--coral);
+  }
+  .pc-icon svg { width: 17px; height: 17px; }
+
+  .pc-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px; font-weight: 700; color: var(--text-primary);
+  }
+
+  .pc-meta {
+    font-size: 9px; color: var(--coral);
+    margin-top: 2px; letter-spacing: 0.06em; opacity: 0.65;
+    text-transform: uppercase;
+  }
+
+  .health-badge {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 10px; letter-spacing: 0.05em; flex-shrink: 0;
+  }
+  .hb-high   { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+  .hb-low    { background: var(--red-dim);   color: var(--red);   border: 1px solid var(--red-border);   }
+
+  .hb-dot { width: 5px; height: 5px; border-radius: 50%; }
+  .hb-high .hb-dot { background: var(--green); }
+  .hb-low .hb-dot  { background: var(--red); }
+
+  /* PROGRESS VISUAL */
+  .progress-visual { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+
+  .ring-wrap { flex-shrink: 0; position: relative; width: 50px; height: 50px; }
+  .ring-wrap svg { transform: rotate(-90deg); }
+  .ring-bg   { fill: none; stroke: rgba(255,255,255,0.07); stroke-width: 4; }
+  .ring-fill { fill: none; stroke-width: 4; stroke-linecap: round; }
+  .rf-high { stroke: var(--green); }
+  .rf-low  { stroke: var(--red); }
+
+  .ring-label {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
+  }
+
+  .mini-bars { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+  .mini-row  { display: flex; align-items: center; gap: 8px; }
+  .mini-lbl  { font-size: 9px; color: var(--coral); width: 42px; flex-shrink: 0; letter-spacing: 0.05em; opacity: 0.65; }
+  .mini-track { flex: 1; height: 3px; background: rgba(255,255,255,0.07); border-radius: 4px; overflow: hidden; }
+  .mini-fill  { height: 100%; border-radius: 4px; }
+  .mf-coral { background: var(--coral); }
+  .mf-green { background: var(--green); }
+  .mf-amber { background: var(--amber); }
+  .mini-val { font-size: 9px; color: var(--text-secondary); width: 24px; text-align: right; flex-shrink: 0; }
+
+  .pc-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 14px; border-top: 1px solid var(--border);
+  }
+
+  .pc-time { font-size: 10px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; }
+  .pc-time svg { width: 10px; height: 10px; opacity: 0.5; }
+
+  .btn-open {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; font-family: 'DM Mono', monospace;
+    color: var(--coral); background: var(--coral-dim);
+    border: 1px solid var(--coral-border); border-radius: 8px;
+    padding: 5px 12px; cursor: pointer; letter-spacing: 0.03em;
+    transition: background 0.15s;
+  }
+  .btn-open:hover { background: rgba(232,113,74,0.20); }
+  .btn-open svg { width: 10px; height: 10px; }
+
+  .review-banner {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(245,158,11,0.08); border-top: 1px solid rgba(245,158,11,0.18);
+    padding: 6px 22px; display: flex; align-items: center; gap: 8px;
+    font-size: 10px; color: var(--amber); letter-spacing: 0.04em;
+  }
+  .review-banner svg { width: 11px; height: 11px; flex-shrink: 0; }
+
+  /* ═══════════════════════════════════════════
+     PRODUCT VIEW
+  ═══════════════════════════════════════════ */
+  .topnav {
+    display: flex; align-items: center;
+    padding: 0 24px; height: 52px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    flex-shrink: 0; gap: 0;
+  }
+
+  .back-btn {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 11px; color: var(--text-secondary);
+    cursor: pointer; padding: 6px 14px 6px 0;
+    border-right: 1px solid var(--border);
+    margin-right: 16px;
+    background: none; border-left: none; border-top: none; border-bottom: none;
+    font-family: 'DM Mono', monospace;
+    transition: color 0.15s;
+  }
+  .back-btn:hover { color: var(--coral); }
+  .back-btn svg { width: 14px; height: 14px; }
+
+  .product-title {
+    font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700;
+    color: var(--text-primary); margin-right: 20px; white-space: nowrap;
+  }
+
+  .conf-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface2); border: 1px solid var(--green-border);
+    border-radius: 20px; padding: 4px 12px 4px 8px;
+    margin-right: auto;
+  }
+  .conf-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .conf-lbl { font-size: 10px; color: var(--green); letter-spacing: 0.05em; white-space: nowrap; }
+  .conf-track { width: 64px; height: 4px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; }
+  .conf-fill  { height: 100%; width: 85%; background: var(--green); border-radius: 4px; }
+  .conf-pct   { font-size: 11px; font-weight: 500; color: var(--green); }
+
+  .topnav-right { display: flex; align-items: center; gap: 10px; margin-left: 16px; }
+
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: none; border: 1px solid var(--border2);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text-secondary);
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .icon-btn:hover { border-color: var(--coral-border); color: var(--coral); }
+  .icon-btn svg { width: 14px; height: 14px; }
+
+  .btn-new-chat {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 14px; background: var(--coral); color: #fff;
+    border: none; border-radius: 8px;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    cursor: pointer; letter-spacing: 0.03em; white-space: nowrap;
+    transition: background 0.15s;
+  }
+  .btn-new-chat:hover { background: var(--coral-bright); }
+  .btn-new-chat svg { width: 12px; height: 12px; }
+
+  /* MAIN TABS */
+  .main-tabs {
+    display: flex; padding: 0 24px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    flex-shrink: 0; gap: 4px;
+  }
+
+  .mtab {
+    padding: 12px 16px; font-size: 12px; letter-spacing: 0.04em;
+    color: var(--text-secondary); cursor: pointer;
+    border-bottom: 2px solid transparent;
+    background: none; border-top: none; border-left: none; border-right: none;
+    font-family: 'DM Mono', monospace;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .mtab:hover { color: var(--text-primary); }
+  .mtab.active { color: var(--coral); border-bottom-color: var(--coral); }
+
+  /* PRODUCT BODY */
+  .prod-body { display: flex; flex: 1; overflow: hidden; }
+
+  /* CHAT SIDEBAR */
+  .chat-sidebar {
+    width: 196px; background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto;
+  }
+
+  .cs-head { padding: 12px 12px 8px; }
+
+  .btn-new-sm {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    padding: 7px 12px; background: var(--coral-dim);
+    border: 1px solid var(--coral-border); border-radius: 8px;
+    font-family: 'DM Mono', monospace; font-size: 11px; color: var(--coral);
+    cursor: pointer; letter-spacing: 0.03em; transition: background 0.15s;
+  }
+  .btn-new-sm:hover { background: rgba(232,113,74,0.18); }
+  .btn-new-sm svg { width: 11px; height: 11px; }
+
+  .chat-list { padding: 4px 8px; display: flex; flex-direction: column; gap: 2px; }
+
+  .ci {
+    padding: 8px 10px; border-radius: 8px;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .ci:hover { background: rgba(255,255,255,0.04); }
+  .ci.active { background: var(--coral-dim); }
+  .ci-title { font-size: 11px; color: var(--text-primary); margin-bottom: 2px; }
+  .ci.active .ci-title { color: var(--coral); }
+  .ci-time  { font-size: 9px; color: var(--text-dim); letter-spacing: 0.03em; }
+
+  /* CONTENT */
+  .content { flex: 1; overflow-y: auto; padding: 28px 32px; }
+
+  /* TAB PANELS */
+  .tab-panel     { display: none; flex: 1; overflow: hidden; }
+  .tab-panel.active { display: flex; }
+  .sub-tab-panel { display: none; }
+  .sub-tab-panel.active { display: block; }
+
+  /* SUB TABS */
+  .sub-tabs {
+    display: flex; gap: 0; margin-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+  }
+  .stab {
+    padding: 10px 18px; font-size: 11px; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--text-secondary); cursor: pointer;
+    border-bottom: 2px solid transparent;
+    background: none; border-top: none; border-left: none; border-right: none;
+    font-family: 'DM Mono', monospace;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .stab:hover { color: var(--text-primary); }
+  .stab.active { color: var(--coral); border-bottom-color: var(--coral); }
+
+  /* UPLOAD ZONE */
+  .upload-zone {
+    border: 1px dashed rgba(232,113,74,0.3);
+    border-radius: 14px; padding: 36px 24px; text-align: center;
+    margin-bottom: 14px; background: rgba(232,113,74,0.03);
+    transition: border-color 0.2s, background 0.2s; cursor: pointer;
+  }
+  .upload-zone:hover { border-color: var(--coral); background: var(--coral-dim); }
+  .upload-icon {
+    width: 42px; height: 42px; border-radius: 12px;
+    background: var(--coral-dim); border: 1px solid var(--coral-border);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 14px; color: var(--coral);
+  }
+  .upload-icon svg { width: 20px; height: 20px; }
+  .upload-title { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+  .upload-sub { font-size: 10px; color: var(--text-secondary); letter-spacing: 0.03em; margin-bottom: 16px; }
+  .btn-select {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 18px; background: var(--surface2);
+    border: 1px solid var(--border2); border-radius: 8px;
+    font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-primary);
+    cursor: pointer; transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-select:hover { border-color: var(--coral-border); color: var(--coral); }
+  .btn-select svg { width: 13px; height: 13px; }
+
+  .url-row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .url-input {
+    flex: 1; display: flex; align-items: center; gap: 10px;
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 10px 14px;
+  }
+  .url-input svg { width: 14px; height: 14px; color: var(--text-secondary); flex-shrink: 0; }
+  .url-input span { font-size: 11px; color: var(--text-dim); }
+
+  .btn-fetch {
+    padding: 10px 18px; background: var(--coral);
+    border: none; border-radius: 8px;
+    font-family: 'DM Mono', monospace; font-size: 11px; color: #fff; cursor: pointer;
+  }
+
+  .crawl-row {
+    display: flex; align-items: center;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; gap: 12px; margin-bottom: 12px;
+  }
+  .crawl-ico { color: var(--coral); flex-shrink: 0; }
+  .crawl-ico svg { width: 14px; height: 14px; }
+  .crawl-txt { flex: 1; }
+  .crawl-lbl { font-size: 11px; color: var(--text-primary); }
+  .crawl-sub { font-size: 9px; color: var(--text-secondary); margin-top: 2px; letter-spacing: 0.02em; }
+  .toggle {
+    width: 36px; height: 20px; border-radius: 10px;
+    background: rgba(255,255,255,0.10); position: relative; cursor: pointer; border: none;
+  }
+  .toggle-thumb {
+    position: absolute; top: 3px; left: 3px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: rgba(255,255,255,0.3); transition: left 0.2s;
+  }
+
+  .chat-ts { font-size: 10px; color: var(--text-dim); margin-top: 14px; letter-spacing: 0.03em; }
+
+  .msg-input-wrap { position: sticky; bottom: 0; padding-top: 20px; background: var(--bg); }
+  .msg-input {
+    display: flex; align-items: center;
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: 12px; padding: 12px 14px; gap: 12px;
+  }
+  .msg-input span { flex: 1; font-size: 12px; color: var(--text-dim); }
+  .send-btn {
+    width: 34px; height: 34px; border-radius: 8px; background: var(--coral);
+    border: none; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: #fff; flex-shrink: 0;
+  }
+  .send-btn svg { width: 14px; height: 14px; }
+
+  .mode-toggle { display: flex; gap: 8px; margin-bottom: 22px; }
+  .mode-btn {
+    display: flex; align-items: center; gap: 7px;
+    padding: 7px 14px; border-radius: 8px;
+    font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.04em;
+    cursor: pointer; transition: all 0.15s;
+    background: var(--surface2); border: 1px solid var(--border2); color: var(--text-secondary);
+  }
+  .mode-btn.active { background: var(--coral-dim); border-color: var(--coral-border); color: var(--coral); }
+  .mode-btn svg { width: 13px; height: 13px; }
+
+  /* SUMMARY */
+  .product-hero {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px; margin-bottom: 20px;
+  }
+  .hero-name { font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 800; color: var(--text-primary); margin-bottom: 12px; }
+  .hero-badges { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 10px; letter-spacing: 0.05em; }
+  .b-neutral { background: rgba(255,255,255,0.07); color: var(--text-secondary); border: 1px solid var(--border2); }
+  .b-green { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+  .hero-upd { font-size: 10px; color: var(--text-dim); letter-spacing: 0.03em; }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+  .info-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+  .ic-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .ic-icon {
+    width: 26px; height: 26px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .ic-coral { background: var(--coral-dim); color: var(--coral); }
+  .ic-green { background: var(--green-dim); color: var(--green); }
+  .ic-amber { background: var(--amber-dim); color: var(--amber); }
+  .ic-blue  { background: var(--blue-dim);  color: var(--blue);  }
+  .ic-icon svg { width: 13px; height: 13px; }
+  .ic-lbl { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--coral); opacity: 0.7; }
+  .ic-val { font-size: 13px; color: var(--text-primary); line-height: 1.6; }
+  .ic-empty { font-size: 12px; color: var(--text-dim); font-style: italic; }
+
+  .health-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
+  .health-title { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+  .health-title span { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .health-title svg { width: 15px; height: 15px; color: var(--coral); }
+  .h-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .h-lbl { font-size: 10px; color: var(--text-secondary); width: 120px; flex-shrink: 0; letter-spacing: 0.03em; }
+  .h-track { flex: 1; height: 5px; background: rgba(255,255,255,0.07); border-radius: 5px; overflow: hidden; }
+  .h-fill { height: 100%; border-radius: 5px; }
+  .hf-coral { background: var(--coral); }
+  .hf-green { background: var(--green); }
+  .hf-amber { background: var(--amber); }
+  .hf-red   { background: var(--red); }
+  .h-val { font-size: 10px; color: var(--text-secondary); width: 36px; text-align: right; flex-shrink: 0; }
+
+  /* FACTS */
+  .fact-group { margin-bottom: 12px; }
+  .fg-header {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 13px 18px; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .fg-header:hover { border-color: var(--coral-border); }
+  .fg-left { display: flex; align-items: center; gap: 12px; }
+  .fg-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .fg-count {
+    padding: 2px 8px; border-radius: 10px;
+    background: var(--coral-dim); border: 1px solid var(--coral-border);
+    font-size: 9px; color: var(--coral); letter-spacing: 0.04em;
+  }
+  .fg-chev { color: var(--text-dim); }
+  .fg-chev svg { width: 14px; height: 14px; }
+  .fg-body { border: 1px solid var(--border); border-top: none; border-radius: 0 0 10px 10px; overflow: hidden; }
+  .fact-item { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .fact-item:last-child { border-bottom: none; }
+  .fact-field { font-size: 10px; color: var(--coral); letter-spacing: 0.04em; margin-bottom: 4px; opacity: 0.75; }
+  .fact-value { font-size: 12px; color: var(--text-primary); line-height: 1.6; margin-bottom: 6px; }
+  .fact-src { font-size: 9px; color: var(--text-dim); }
+  .fact-src a { color: var(--blue); opacity: 0.7; text-decoration: none; }
+
+  /* GAPS */
+  .gap-sec { margin-bottom: 24px; }
+  .gap-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .gap-sec-head svg { width: 14px; height: 14px; }
+  .gsh-crit { color: var(--red); }
+  .gsh-imp  { color: var(--amber); }
+  .gsh-lbl  { font-size: 11px; letter-spacing: 0.05em; }
+  .gsh-crit .gsh-lbl { color: var(--red); }
+  .gsh-imp  .gsh-lbl { color: var(--amber); }
+
+  .gap-item {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 10px;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  }
+  .gap-left { flex: 1; }
+  .gap-field { font-size: 9px; color: var(--coral); letter-spacing: 0.05em; margin-bottom: 6px; opacity: 0.65; }
+  .gap-q { font-size: 12px; color: var(--text-primary); font-weight: 500; line-height: 1.5; margin-bottom: 6px; }
+  .gap-why { font-size: 10px; color: var(--text-secondary); line-height: 1.5; }
+  .btn-fill {
+    padding: 7px 14px; background: var(--surface3);
+    border: 1px solid var(--border2); border-radius: 8px;
+    font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-secondary);
+    cursor: pointer; white-space: nowrap; flex-shrink: 0;
+    letter-spacing: 0.03em; transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-fill:hover { border-color: var(--coral-border); color: var(--coral); }
+
+  /* PERSONAS EMPTY */
+  .empty-sec { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 52px 24px; text-align: center; }
+  .empty-ico { width: 50px; height: 50px; border-radius: 14px; background: var(--surface2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; color: var(--text-dim); }
+  .empty-ico svg { width: 22px; height: 22px; }
+  .empty-ttl { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+  .empty-sub { font-size: 11px; color: var(--text-secondary); line-height: 1.6; }
+  .sec-heading { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 20px; }
+  .divider { height: 1px; background: var(--border); margin: 32px 0; }
+
+  /* DOCUMENTS */
+  .ing-header { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; }
+  .ing-header span { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--coral); font-weight: 400; margin-left: 8px; opacity: 0.7; }
+  .ing-item {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 8px;
+    transition: border-color 0.15s; cursor: pointer;
+  }
+  .ing-item:hover { border-color: var(--coral-border); }
+  .ing-ico { width: 30px; height: 30px; border-radius: 8px; background: var(--coral-dim); border: 1px solid var(--coral-border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--coral); }
+  .ing-ico svg { width: 13px; height: 13px; }
+  .ing-info { flex: 1; }
+  .ing-name { font-size: 12px; color: var(--text-primary); margin-bottom: 2px; }
+  .ing-url  { font-size: 10px; color: var(--text-secondary); letter-spacing: 0.02em; }
+  .ing-time { font-size: 10px; color: var(--text-dim); letter-spacing: 0.02em; }
+
+  /* CHAT CONTENT */
+  .chat-content { max-width: 640px; }
+  .analysis-title { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+  .analysis-sub { font-size: 10px; color: var(--coral); opacity: 0.7; letter-spacing: 0.06em; margin-bottom: 22px; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════
+     DASHBOARD VIEW
+═══════════════════════════════════════ -->
+<div id="view-dashboard" class="view active">
+
+  <div class="dash-nav">
+    <div class="brand">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2">
+          <polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/>
+          <polygon points="12,7 17,10 17,14 12,17 7,14 7,10"/>
+        </svg>
+      </div>
+      <div class="brand-name">Orchestral-AI</div>
+    </div>
+    <button class="btn-add" onclick="goToProduct()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      add product
+    </button>
+  </div>
+
+  <div class="dash-body">
+    <div class="dash-toprow">
+      <div>
+        <div class="dash-title">Product Intelligence</div>
+        <div class="dash-sub">// 6 products · last synced 17m ago</div>
+      </div>
+      <div class="dash-count">6 products</div>
+    </div>
+
+    <div class="summary-row">
+      <div class="sum-card sc-coral">
+        <div class="sum-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+        <div class="sum-label">total products</div>
+        <div class="sum-value">6</div>
+        <div class="sum-sub">across all workspaces</div>
+      </div>
+      <div class="sum-card sc-green">
+        <div class="sum-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="sum-label">high knowledge</div>
+        <div class="sum-value">4</div>
+        <div class="sum-sub">above 80% coverage</div>
+      </div>
+      <div class="sum-card sc-amber">
+        <div class="sum-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+        <div class="sum-label">needs review</div>
+        <div class="sum-value">2</div>
+        <div class="sum-sub">conflicts detected</div>
+      </div>
+      <div class="sum-card sc-red">
+        <div class="sum-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
+        <div class="sum-label">low coverage</div>
+        <div class="sum-value">2</div>
+        <div class="sum-sub">under 20% filled</div>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <div class="section-title">Your products</div>
+    </div>
+
+    <div class="product-grid">
+
+      <!-- LOW 0% -->
+      <div class="product-card" onclick="goToProduct()">
+        <div class="pc-header">
+          <div class="pc-identity">
+            <div class="pc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
+            <div><div class="pc-name">Notion</div><div class="pc-meta">pkb · product</div></div>
+          </div>
+          <div class="health-badge hb-low"><div class="hb-dot"></div>LOW</div>
+        </div>
+        <div class="progress-visual">
+          <div class="ring-wrap">
+            <svg width="50" height="50" viewBox="0 0 50 50"><circle class="ring-bg" cx="25" cy="25" r="21"/><circle class="ring-fill rf-low" cx="25" cy="25" r="21" stroke-dasharray="131.9" stroke-dashoffset="131.9"/></svg>
+            <div class="ring-label" style="color:var(--red)">0%</div>
+          </div>
+          <div class="mini-bars">
+            <div class="mini-row"><div class="mini-lbl">facts</div><div class="mini-track"><div class="mini-fill mf-coral" style="width:0%"></div></div><div class="mini-val">0</div></div>
+            <div class="mini-row"><div class="mini-lbl">personas</div><div class="mini-track"><div class="mini-fill mf-green" style="width:0%"></div></div><div class="mini-val">0</div></div>
+            <div class="mini-row"><div class="mini-lbl">coverage</div><div class="mini-track"><div class="mini-fill mf-amber" style="width:0%"></div></div><div class="mini-val">0%</div></div>
+          </div>
+        </div>
+        <div class="pc-footer">
+          <div class="pc-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>6h ago</div>
+          <button class="btn-open">open <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+        </div>
+      </div>
+
+      <!-- LOW 0% + REVIEW -->
+      <div class="product-card" style="padding-bottom:46px;" onclick="goToProduct()">
+        <div class="pc-header">
+          <div class="pc-identity">
+            <div class="pc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
+            <div><div class="pc-name">Notion 2</div><div class="pc-meta">pkb · product</div></div>
+          </div>
+          <div class="health-badge hb-low"><div class="hb-dot"></div>LOW</div>
+        </div>
+        <div class="progress-visual">
+          <div class="ring-wrap">
+            <svg width="50" height="50" viewBox="0 0 50 50"><circle class="ring-bg" cx="25" cy="25" r="21"/><circle class="ring-fill rf-low" cx="25" cy="25" r="21" stroke-dasharray="131.9" stroke-dashoffset="131.9"/></svg>
+            <div class="ring-label" style="color:var(--red)">0%</div>
+          </div>
+          <div class="mini-bars">
+            <div class="mini-row"><div class="mini-lbl">facts</div><div class="mini-track"><div class="mini-fill mf-coral" style="width:0%"></div></div><div class="mini-val">0</div></div>
+            <div class="mini-row"><div class="mini-lbl">personas</div><div class="mini-track"><div class="mini-fill mf-green" style="width:0%"></div></div><div class="mini-val">0</div></div>
+            <div class="mini-row"><div class="mini-lbl">coverage</div><div class="mini-track"><div class="mini-fill mf-amber" style="width:0%"></div></div><div class="mini-val">0%</div></div>
+          </div>
+        </div>
+        <div class="pc-footer">
+          <div class="pc-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>2h ago</div>
+          <button class="btn-open">open <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+        </div>
+        <div class="review-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>3 conflicts need review</div>
+      </div>
+
+      <!-- HIGH 85% -->
+      <div class="product-card" onclick="goToProduct()">
+        <div class="pc-header">
+          <div class="pc-identity">
+            <div class="pc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
+            <div><div class="pc-name">Notion 3</div><div class="pc-meta">pkb · product</div></div>
+          </div>
+          <div class="health-badge hb-high"><div class="hb-dot"></div>HIGH</div>
+        </div>
+        <div class="progress-visual">
+          <div class="ring-wrap">
+            <svg width="50" height="50" viewBox="0 0 50 50"><circle class="ring-bg" cx="25" cy="25" r="21"/><circle class="ring-fill rf-high" cx="25" cy="25" r="21" stroke-dasharray="131.9" stroke-dashoffset="19.8"/></svg>
+            <div class="ring-label" style="color:var(--green)">85%</div>
+          </div>
+          <div class="mini-bars">
+            <div class="mini-row"><div class="mini-lbl">facts</div><div class="mini-track"><div class="mini-fill mf-coral" style="width:90%"></div></div><div class="mini-val">47</div></div>
+            <div class="mini-row"><div class="mini-lbl">personas</div><div class="mini-track"><div class="mini-fill mf-green" style="width:80%"></div></div><div class="mini-val">3</div></div>
+            <div class="mini-row"><div class="mini-lbl">coverage</div><div class="mini-track"><div class="mini-fill mf-amber" style="width:85%"></div></div><div class="mini-val">85%</div></div>
+          </div>
+        </div>
+        <div class="pc-footer">
+          <div class="pc-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>1h ago</div>
+          <button class="btn-open">open <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+        </div>
+      </div>
+
+      <!-- HIGH 85% -->
+      <div class="product-card" onclick="goToProduct()">
+        <div class="pc-header">
+          <div class="pc-identity">
+            <div class="pc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
+            <div><div class="pc-name">Notion 4</div><div class="pc-meta">pkb · product</div></div>
+          </div>
+          <div class="health-badge hb-high"><div class="hb-dot"></div>HIGH</div>
+        </div>
+        <div class="progress-visual">
+          <div class="ring-wrap">
+            <svg width="50" height="50" viewBox="0 0 50 50"><circle class="ring-bg" cx="25" cy="25" r="21"/><circle class="ring-fill rf-high" cx="25" cy="25" r="21" stroke-dasharray="131.9" stroke-dashoffset="19.8"/></svg>
+            <div class="ring-label" style="color:var(--green)">85%</div>
+          </div>
+          <div class="mini-bars">
+            <div class="mini-row"><div class="mini-lbl">facts</div><div class="mini-track"><div class="mini-fill mf-coral" style="width:88%"></div></div><div class="mini-val">44</div></div>
+            <div class="mini-row"><div class="mini-lbl">personas</div><div class="mini-track"><div class="mini-fill mf-green" style="width:75%"></div></div><div class="mini-val">3</div></div>
+            <div class="mini-row"><div class="mini-lbl">coverage</div><div class="mini-track"><div class="mini-fill mf-amber" style="width:85%"></div></div><div class="mini-val">85%</div></div>
+          </div>
+        </div>
+        <div class="pc-footer">
+          <div class="pc-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>58m ago</div>
+          <button class="btn-open">open <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+        </div>
+      </div>
+
+      <!-- HIGH 85% -->
+      <div class="product-card" onclick="goToProduct()">
+        <div class="pc-header">
+          <div class="pc-identity">
+            <div class="pc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
+            <div><div class="pc-name">Notion 5</div><div class="pc-meta">pkb · product</div></div>
+          </div>
+          <div class="health-badge hb-high"><div class="hb-dot"></div>HIGH</div>
+        </div>
+        <div class="progress-visual">
+          <div class="ring-wrap">
+            <svg width="50" height="50" viewBox="0 0 50 50"><circle class="ring-bg" cx="25" cy="25" r="21"/><circle class="ring-fill rf-high" cx="25" cy="25" r="21" stroke-dasharray="131.9" stroke-dashoffset="19.8"/></svg>
+            <div class="ring-label" style="color:var(--green)">85%</div>
+          </div>
+          <div class="mini-bars">
+            <div class="mini-row"><div class="mini-lbl">facts</div><div class="mini-track"><div class="mini-fill mf-coral" style="width:85%"></div></div><div class="mini-val">42</div></div>
+            <div class="mini-row"><div class="mini-lbl">personas</div><div class="mini-track"><div class="mini-fill mf-green" style="width:100%"></div></div><div class="mini-val">3</div></div>
+            <div class="mini-row"><div class="mini-lbl">coverage</div><div class="mini-track"><div class="mini-fill mf-amber" style="width:85%"></div></div><div class="mini-val">85%</div></div>
+          </div>
+        </div>
+        <div class="pc-footer">
+          <div class="pc-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>26m ago</div>
+          <button class="btn-open">open <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+        </div>
+      </div>
+
+      <!-- HIGH 85% -->
+      <div class="product-card" onclick="goToProduct()">
+        <div class="pc-header">
+          <div class="pc-identity">
+            <div class="pc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
+            <div><div class="pc-name">Notion 6</div><div class="pc-meta">pkb · product</div></div>
+          </div>
+          <div class="health-badge hb-high"><div class="hb-dot"></div>HIGH</div>
+        </div>
+        <div class="progress-visual">
+          <div class="ring-wrap">
+            <svg width="50" height="50" viewBox="0 0 50 50"><circle class="ring-bg" cx="25" cy="25" r="21"/><circle class="ring-fill rf-high" cx="25" cy="25" r="21" stroke-dasharray="131.9" stroke-dashoffset="19.8"/></svg>
+            <div class="ring-label" style="color:var(--green)">85%</div>
+          </div>
+          <div class="mini-bars">
+            <div class="mini-row"><div class="mini-lbl">facts</div><div class="mini-track"><div class="mini-fill mf-coral" style="width:82%"></div></div><div class="mini-val">41</div></div>
+            <div class="mini-row"><div class="mini-lbl">personas</div><div class="mini-track"><div class="mini-fill mf-green" style="width:67%"></div></div><div class="mini-val">2</div></div>
+            <div class="mini-row"><div class="mini-lbl">coverage</div><div class="mini-track"><div class="mini-fill mf-amber" style="width:85%"></div></div><div class="mini-val">85%</div></div>
+          </div>
+        </div>
+        <div class="pc-footer">
+          <div class="pc-time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>17m ago</div>
+          <button class="btn-open">open <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     PRODUCT VIEW
+═══════════════════════════════════════ -->
+<div id="view-product" class="view">
+
+  <div class="topnav">
+    <button class="back-btn" onclick="goToDash()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      dashboard
+    </button>
+    <div class="product-title">Notion 6</div>
+    <div class="conf-pill">
+      <div class="conf-dot"></div>
+      <div class="conf-lbl">High Confidence</div>
+      <div class="conf-track"><div class="conf-fill"></div></div>
+      <div class="conf-pct">85%</div>
+    </div>
+    <div class="topnav-right">
+      <button class="icon-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      </button>
+      <button class="btn-new-chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        new chat
+      </button>
+    </div>
+  </div>
+
+  <div class="main-tabs">
+    <button class="mtab active" onclick="switchMain(this,'chat')">Chat</button>
+    <button class="mtab" onclick="switchMain(this,'knowledge')">Knowledge</button>
+    <button class="mtab" onclick="switchMain(this,'personas')">Personas</button>
+    <button class="mtab" onclick="switchMain(this,'documents')">Documents</button>
+  </div>
+
+  <div class="prod-body">
+
+    <!-- CHAT -->
+    <div id="tp-chat" class="tab-panel active">
+      <div class="chat-sidebar">
+        <div class="cs-head">
+          <button class="btn-new-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            new chat
+          </button>
+        </div>
+        <div class="chat-list">
+          <div class="ci active"><div class="ci-title">Chat 51m ago</div><div class="ci-time">// 51m ago</div></div>
+          <div class="ci"><div class="ci-title">Chat 54m ago</div><div class="ci-time">// 54m ago</div></div>
+          <div class="ci"><div class="ci-title">Chat 55m ago</div><div class="ci-time">// 55m ago</div></div>
+        </div>
+      </div>
+      <div class="content">
+        <div class="chat-content">
+          <div class="analysis-title">New Product Analysis</div>
+          <div class="analysis-sub">// provide context to begin</div>
+          <div class="mode-toggle">
+            <button class="mode-btn active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>learner</button>
+            <button class="mode-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>explainer</button>
+          </div>
+          <div class="upload-zone">
+            <div class="upload-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></div>
+            <div class="upload-title">Drop files here or click to upload</div>
+            <div class="upload-sub">// supports PDF, DOCX, TXT, Markdown</div>
+            <button class="btn-select"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>select files</button>
+          </div>
+          <div class="url-row">
+            <div class="url-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>paste a product website URL...</span></div>
+            <button class="btn-fetch">fetch</button>
+          </div>
+          <div class="crawl-row">
+            <div class="crawl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+            <div class="crawl-txt">
+              <div class="crawl-lbl">Crawl entire website</div>
+              <div class="crawl-sub">// extract content from all pages, not just the URL you enter</div>
+            </div>
+            <div class="toggle"><div class="toggle-thumb"></div></div>
+          </div>
+          <div class="chat-ts">// 02:11</div>
+          <div class="msg-input-wrap">
+            <div class="msg-input">
+              <span>Type your message...</span>
+              <button class="send-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KNOWLEDGE -->
+    <div id="tp-knowledge" class="tab-panel" style="flex-direction:column;">
+      <div class="content" style="padding-top:20px;">
+        <div class="sub-tabs">
+          <button class="stab active" onclick="switchSub(this,'summary')">Summary</button>
+          <button class="stab" onclick="switchSub(this,'facts')">Facts</button>
+          <button class="stab" onclick="switchSub(this,'gaps')">Gaps</button>
+        </div>
+
+        <!-- SUMMARY -->
+        <div id="st-summary" class="sub-tab-panel active">
+          <div class="product-hero">
+            <div class="hero-name">Notion</div>
+            <div class="hero-badges">
+              <div class="badge b-neutral">B2B</div>
+              <div class="badge b-green">High Confidence · 85%</div>
+              <div class="hero-upd">// updated 14 Mar 2026</div>
+            </div>
+          </div>
+          <div class="info-grid">
+            <div class="info-card">
+              <div class="ic-head"><div class="ic-icon ic-coral"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg></div><div class="ic-lbl">what it is</div></div>
+              <div class="ic-val">Difficulty in collaborating and streamlining communication across large, cross-functional teams.</div>
+            </div>
+            <div class="info-card">
+              <div class="ic-head"><div class="ic-icon ic-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="ic-lbl">who it's for</div></div>
+              <div class="ic-val">product teams, startups, engineers</div>
+            </div>
+            <div class="info-card">
+              <div class="ic-head"><div class="ic-icon ic-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div class="ic-lbl">why it wins</div></div>
+              <div class="ic-empty">No differentiation captured yet.</div>
+            </div>
+            <div class="info-card">
+              <div class="ic-head"><div class="ic-icon ic-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div><div class="ic-lbl">personas</div></div>
+              <div class="ic-empty">No personas extracted yet.</div>
+            </div>
+          </div>
+          <div class="health-card">
+            <div class="health-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Knowledge Health</span></div>
+            <div class="h-row"><div class="h-lbl">Product Identity</div><div class="h-track"><div class="h-fill hf-coral" style="width:50%"></div></div><div class="h-val">1 / 2</div></div>
+            <div class="h-row"><div class="h-lbl">Value Proposition</div><div class="h-track"><div class="h-fill hf-green" style="width:80%"></div></div><div class="h-val">4 / 5</div></div>
+            <div class="h-row"><div class="h-lbl">Target Users</div><div class="h-track"><div class="h-fill hf-amber" style="width:60%"></div></div><div class="h-val">3 / 5</div></div>
+            <div class="h-row"><div class="h-lbl">Use Cases</div><div class="h-track"><div class="h-fill hf-red" style="width:25%"></div></div><div class="h-val">1 / 4</div></div>
+          </div>
+        </div>
+
+        <!-- FACTS -->
+        <div id="st-facts" class="sub-tab-panel">
+          <div class="fact-group">
+            <div class="fg-header"><div class="fg-left"><div class="fg-name">Product Identity</div><div class="fg-count">1</div></div><div class="fg-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></div></div>
+            <div class="fg-body">
+              <div class="fact-item"><div class="fact-field">// name</div><div class="fact-value">Notion</div><div class="fact-src">3 sources · <a href="#">notion.com/help (1/3)</a></div></div>
+            </div>
+          </div>
+          <div class="fact-group">
+            <div class="fg-header"><div class="fg-left"><div class="fg-name">Value Proposition</div><div class="fg-count">2</div></div><div class="fg-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></div></div>
+            <div class="fg-body">
+              <div class="fact-item"><div class="fact-field">// top_benefits</div><div class="fact-value">Keep everything organized and easy to find, write better, more efficient notes and docs, think bigger, work faster, and augment your creativity.</div><div class="fact-src">2 sources · <a href="#">notion.com/help (2/3)</a></div></div>
+              <div class="fact-item"><div class="fact-field">// primary_problem</div><div class="fact-value">Difficulty in collaborating and streamlining communication across large, cross-functional teams.</div><div class="fact-src">1 source · <a href="#">notion.com/help (3/3)</a></div></div>
+            </div>
+          </div>
+          <div class="fact-group">
+            <div class="fg-header"><div class="fg-left"><div class="fg-name">Target Users</div><div class="fg-count">1</div></div><div class="fg-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></div></div>
+            <div class="fg-body">
+              <div class="fact-item"><div class="fact-field">// primary_users</div><div class="fact-value">product teams, startups, engineers</div><div class="fact-src">2 sources · <a href="#">notion.com/help (2/3)</a></div></div>
+            </div>
+          </div>
+          <div class="fact-group">
+            <div class="fg-header"><div class="fg-left"><div class="fg-name">Use Cases</div><div class="fg-count">1</div></div><div class="fg-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div></div>
+          </div>
+        </div>
+
+        <!-- GAPS -->
+        <div id="st-gaps" class="sub-tab-panel">
+          <div class="gap-sec">
+            <div class="gap-sec-head gsh-crit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div class="gsh-lbl">Critical (2)</div></div>
+            <div class="gap-item">
+              <div class="gap-left"><div class="gap-field">// extensions.b2b.org_fit</div><div class="gap-q">What are the typical company sizes and industries that benefit most from using Notion?</div><div class="gap-why">Understanding the target market helps in tailoring marketing efforts and optimizing the product for specific business environments.</div></div>
+              <button class="btn-fill">fill this gap</button>
+            </div>
+            <div class="gap-item">
+              <div class="gap-left"><div class="gap-field">// extensions.b2b.buyer_personas</div><div class="gap-q">Who are the main decision makers and end users within organizations that Notion targets?</div><div class="gap-why">Identifying the decision makers and users is crucial for effective sales strategies and communication.</div></div>
+              <button class="btn-fill">fill this gap</button>
+            </div>
+          </div>
+          <div class="gap-sec">
+            <div class="gap-sec-head gsh-imp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div class="gsh-lbl">Important (3)</div></div>
+            <div class="gap-item">
+              <div class="gap-left"><div class="gap-field">// extensions.b2b.sales_cycle</div><div class="gap-q">Could you describe the typical sales cycle and deal process for Notion in enterprise environments?</div><div class="gap-why">Knowing the sales cycle helps to align sales resources, forecast revenue, and improve customer acquisition strategies.</div></div>
+              <button class="btn-fill">fill this gap</button>
+            </div>
+            <div class="gap-item">
+              <div class="gap-left"><div class="gap-field">// extensions.b2b.integrations</div><div class="gap-q">What business tools and systems does Notion integrate with to optimize workflows for its users?</div><div class="gap-why">Integration options are critical for businesses to leverage existing tech environments and enhance productivity.</div></div>
+              <button class="btn-fill">fill this gap</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- PERSONAS -->
+    <div id="tp-personas" class="tab-panel" style="flex-direction:column;">
+      <div class="content">
+        <div class="sec-heading">Personas</div>
+        <div class="empty-sec">
+          <div class="empty-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+          <div class="empty-ttl">No personas extracted yet</div>
+          <div class="empty-sub">// personas are inferred after documents<br>or URLs are processed</div>
+        </div>
+        <div class="divider"></div>
+        <div class="sec-heading">Ideal Customer Profiles</div>
+        <div class="empty-sec">
+          <div class="empty-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div>
+          <div class="empty-ttl">No ICPs extracted yet</div>
+          <div class="empty-sub">// ICPs are inferred alongside personas<br>after processing</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DOCUMENTS -->
+    <div id="tp-documents" class="tab-panel" style="flex-direction:column;">
+      <div class="content">
+        <div style="max-width:640px;">
+          <div class="sec-heading" style="margin-bottom:20px;">Add Knowledge</div>
+          <div class="upload-zone" style="margin-bottom:14px;">
+            <div class="upload-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></div>
+            <div class="upload-title">Drop files here or click to upload</div>
+            <div class="upload-sub">// supports PDF, DOCX, TXT, Markdown</div>
+            <button class="btn-select"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>select files</button>
+          </div>
+          <div class="url-row">
+            <div class="url-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>paste a product website URL...</span></div>
+            <button class="btn-fetch">fetch</button>
+          </div>
+          <div class="crawl-row">
+            <div class="crawl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+            <div class="crawl-txt"><div class="crawl-lbl">Crawl entire website</div><div class="crawl-sub">// extract content from all pages, not just the URL you enter</div></div>
+            <div class="toggle"><div class="toggle-thumb"></div></div>
+          </div>
+          <div style="margin-top:28px;">
+            <div class="ing-header">Ingested Sources <span>// 1</span></div>
+            <div class="ing-item">
+              <div class="ing-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+              <div class="ing-info"><div class="ing-name">Documentation</div><div class="ing-url">notion.com/help/guides/category/documentation</div></div>
+              <div class="ing-time">// 57m ago</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  function goToProduct() {
+    document.getElementById('view-dashboard').classList.remove('active');
+    document.getElementById('view-product').classList.add('active');
+  }
+
+  function goToDash() {
+    document.getElementById('view-product').classList.remove('active');
+    document.getElementById('view-dashboard').classList.add('active');
+  }
+
+  function switchMain(btn, tab) {
+    document.querySelectorAll('.mtab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-panel').forEach(p => { p.classList.remove('active'); p.style.display = 'none'; });
+    const el = document.getElementById('tp-' + tab);
+    if (el) { el.classList.add('active'); el.style.display = 'flex'; }
+  }
+
+  function switchSub(btn, tab) {
+    document.querySelectorAll('.stab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.sub-tab-panel').forEach(p => p.classList.remove('active'));
+    const el = document.getElementById('st-' + tab);
+    if (el) el.classList.add('active');
+  }
+</script>
+</body>
+</html>

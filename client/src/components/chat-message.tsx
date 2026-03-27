@@ -79,7 +79,7 @@ export function ChatMessage({
       case "gap_question":
         return (
           <div className="mt-3">
-            <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-500 border-yellow-500/20">
+            <Badge variant="outline" className="bg-glow-amber/10 text-glow-amber border-glow-amber/20">
               <AlertCircle className="h-3 w-3 mr-1" />
               Gap identified
             </Badge>

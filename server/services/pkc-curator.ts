@@ -1,6 +1,87 @@
-import type { PKB, ProposedUpdate, PKCDecision, Source, Conflict, FactField } from "@shared/schema";
-import { loadPKB, savePKB } from "./pkb-storage";
+import type { PKB, ProposedUpdate, PKCDecision, Source, Conflict, FactField, OrgConflict } from "@shared/schema";
+import { loadPKB, savePKB, loadOrgPKB, addOrgConflict } from "./pkb-storage";
 import { randomUUID } from "crypto";
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Org conflict detection — product field → org PKB field mapping
+// ──────────────────────────────────────────────────────────────────────────────
+
+type OrgFieldKey = "locations" | "competitors" | "industry" | "business_model";
+
+const ORG_CONFLICT_MAPPING: Record<string, OrgFieldKey> = {
+  "facts.target_users.markets": "locations",
+  "facts.differentiation.competitors": "competitors",
+  "facts.product_identity.industry": "industry",
+};
+
+async function detectOrgConflict(
+  productId: string,
+  orgId: number,
+  update: ProposedUpdate,
+  pkb: PKB
+): Promise<void> {
+  try {
+    const orgPKB = await loadOrgPKB(orgId);
+    const productValue = update.value?.value ?? update.value;
+    const productValueStr = Array.isArray(productValue)
+      ? productValue.join(", ")
+      : String(productValue ?? "");
+
+    if (!productValueStr.trim()) return;
+
+    let orgField: OrgFieldKey | null = null;
+    let orgValue: string | null = null;
+
+    // Direct field mapping
+    if (ORG_CONFLICT_MAPPING[update.field_path]) {
+      orgField = ORG_CONFLICT_MAPPING[update.field_path];
+      const raw = (orgPKB as any)[orgField];
+      orgValue = Array.isArray(raw) ? raw.join(", ") : String(raw ?? "");
+    } else if (update.field_path.startsWith("facts.constraints_assumptions")) {
+      // Business model signal detection
+      const lower = productValueStr.toLowerCase();
+      if (lower.includes("b2b") || lower.includes("b2c") || lower.includes("both")) {
+        orgField = "business_model";
+        orgValue = orgPKB.business_model || "";
+      }
+    }
+
+    if (!orgField || !orgValue?.trim()) return; // no mapping or org field is empty
+
+    // Normalised comparison
+    const orgNorm = orgValue.toLowerCase().trim();
+    const prodNorm = productValueStr.toLowerCase().trim();
+    if (orgNorm === prodNorm) return; // values match — no conflict
+
+    // Duplicate guard: skip if a pending conflict for this field + product already exists
+    if (!orgPKB.conflicts) orgPKB.conflicts = [];
+    const numericProductId = parseInt(productId);
+    const hasPending = orgPKB.conflicts.some(
+      c => c.field === orgField && c.product_id === numericProductId && c.status === "pending"
+    );
+    if (hasPending) return;
+
+    const productName = (pkb.meta as any).product_name || `product_${productId}`;
+    const conflict: OrgConflict = {
+      id: randomUUID(),
+      product_id: numericProductId,
+      product_name: productName,
+      field: orgField,
+      org_value: orgValue,
+      product_value: productValueStr,
+      suggestion: `Update "${orgField}" from "${orgValue}" to "${productValueStr}" based on ${productName} data`,
+      detected_at: new Date().toISOString(),
+      status: "pending",
+    };
+
+    await addOrgConflict(orgId, conflict);
+    console.log(
+      `[org-conflict] org ${orgId} field "${orgField}": org="${orgValue}" vs product="${productValueStr}"`
+    );
+  } catch (err) {
+    console.error("[org-conflict] detection failed:", err);
+  }
+}
 
 const VALID_SECTIONS = ["facts", "extensions.b2b", "extensions.b2c", "derived_insights", "gaps"];
 const AGENTS_REQUIRING_SOURCES = ["extractor", "interviewer"];
@@ -8,7 +89,6 @@ const WRITE_PERMISSIONS: Record<string, string[]> = {
   extractor: ["facts", "extensions.b2b", "extensions.b2c"],
   interviewer: ["facts", "extensions.b2b", "extensions.b2c"],
   synthesizer: ["derived_insights"],
-  gap_identifier: ["gaps"],
 };
 
 function getNestedValue(obj: any, path: string): any {
@@ -88,12 +168,12 @@ export function validateProposedUpdate(pkb: PKB, update: ProposedUpdate): PKCDec
   return { accepted: true };
 }
 
-export function applyProposedUpdate(sessionId: string, update: ProposedUpdate): PKCDecision {
-  const pkb = loadPKB(sessionId);
+export async function applyProposedUpdate(productId: string, update: ProposedUpdate, orgId?: number): Promise<PKCDecision> {
+  const pkb = await loadPKB(productId);
   if (!pkb) {
     return {
       accepted: false,
-      reason: `PKB not found for session ${sessionId}`,
+      reason: `PKB not found for product ${productId}`,
     };
   }
 
@@ -134,12 +214,12 @@ export function applyProposedUpdate(sessionId: string, update: ProposedUpdate): 
       const conflict: Conflict = {
         conflict_id: conflictId,
         field_path: update.field_path,
-        old_value: existingValue,
-        new_value: update.value,
-        old_source: existingValue.sources?.[0] || { source_type: "doc", source_ref: "unknown", captured_at: "" },
-        new_source: update.sources?.[0] || { source_type: "doc", source_ref: "unknown", captured_at: "" },
-        status: "pending",
-        created_at: new Date().toISOString(),
+        value_a: existingValue,
+        value_b: update.value,
+        source_a: existingValue.sources?.[0] || { source_type: "doc", source_ref: "unknown", captured_at: "" },
+        source_b: update.sources?.[0] || { source_type: "doc", source_ref: "unknown", captured_at: "" },
+        resolution_status: "unresolved",
+        detected_at: new Date().toISOString(),
       };
 
       if (!pkb.conflicts) pkb.conflicts = [];
@@ -156,7 +236,7 @@ export function applyProposedUpdate(sessionId: string, update: ProposedUpdate): 
         why_needed: "Conflicting information needs human resolution",
       });
 
-      savePKB(sessionId, pkb);
+      await savePKB(productId, pkb);
 
       return {
         accepted: false,
@@ -191,7 +271,15 @@ export function applyProposedUpdate(sessionId: string, update: ProposedUpdate): 
     setNestedValue(targetObj, relativePath, update.value);
   }
 
-  savePKB(sessionId, pkb);
+  await savePKB(productId, pkb);
+
+  // Org conflict detection — only for fact/extension commits, only when orgId is provided
+  if (
+    orgId !== undefined &&
+    (update.target_section === "facts" || update.target_section.startsWith("extensions."))
+  ) {
+    await detectOrgConflict(productId, orgId, update, pkb);
+  }
 
   return { accepted: true };
 }
@@ -208,13 +296,13 @@ function determineQualityTag(sources: Source[]): "strong" | "ok" | "weak" {
   return "weak";
 }
 
-export function resolveConflict(
-  sessionId: string, 
-  conflictId: string, 
+export async function resolveConflict(
+  productId: string,
+  conflictId: string,
   resolution: "keep_old" | "use_new" | string,
   customValue?: any
-): PKCDecision {
-  const pkb = loadPKB(sessionId);
+): Promise<PKCDecision> {
+  const pkb = await loadPKB(productId);
   if (!pkb) {
     return { accepted: false, reason: "PKB not found" };
   }
@@ -228,9 +316,9 @@ export function resolveConflict(
   
   let finalValue: any;
   if (resolution === "keep_old") {
-    finalValue = conflict.old_value;
+    finalValue = conflict.value_a;
   } else if (resolution === "use_new") {
-    finalValue = conflict.new_value;
+    finalValue = conflict.value_b;
   } else {
     finalValue = customValue ?? resolution;
   }
@@ -255,7 +343,7 @@ export function resolveConflict(
     setNestedValue(targetObj, pathParts.join("."), finalValue);
   }
 
-  conflict.status = "resolved";
+  conflict.resolution_status = "resolved";
   conflict.resolved_at = new Date().toISOString();
   conflict.resolution = resolution;
 
@@ -265,11 +353,11 @@ export function resolveConflict(
     );
   }
 
-  savePKB(sessionId, pkb);
+  await savePKB(productId, pkb);
 
   return { accepted: true };
 }
 
-export function batchApplyUpdates(sessionId: string, updates: ProposedUpdate[]): PKCDecision[] {
-  return updates.map(update => applyProposedUpdate(sessionId, update));
+export async function batchApplyUpdates(productId: string, updates: ProposedUpdate[], orgId?: number): Promise<PKCDecision[]> {
+  return Promise.all(updates.map(update => applyProposedUpdate(productId, update, orgId)));
 }
