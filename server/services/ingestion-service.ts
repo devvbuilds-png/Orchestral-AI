@@ -314,7 +314,7 @@ export function cleanText(text: string): string {
     .trim();
 }
 
-export function chunkText(text: string, maxChunkSize: number = 4000): string[] {
+export function chunkText(text: string, maxChunkSize: number = 16000): string[] {
   const cleanedText = cleanText(text);
   
   if (cleanedText.length <= maxChunkSize) {
@@ -385,10 +385,31 @@ export async function processUploadedFile(
       upsert: true,
     });
   if (error) {
-    console.error(`[ingestion] Failed to upload ${safeName} to Supabase: ${error.message}`);
+    throw new Error(`Failed to upload ${safeName} to storage: ${error.message}`);
   }
 
   return { text: cleanedText, filename: safeName };
+}
+
+// Stores fetched URL text in Supabase so /process doesn't need to re-fetch.
+export async function storeUrlText(productId: string, url: string, text: string): Promise<void> {
+  const slug = url.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 120);
+  const storagePath = `product_${productId}/url_${slug}.txt`;
+  const { error } = await supabase.storage
+    .from(UPLOADS_BUCKET)
+    .upload(storagePath, text, { contentType: "text/plain", upsert: true, cacheControl: "0" });
+  if (error) {
+    console.error(`Failed to store URL text for ${url}:`, error.message);
+  }
+}
+
+// Loads previously stored URL text from Supabase. Returns null if not found.
+export async function loadStoredUrlText(productId: string, url: string): Promise<string | null> {
+  const slug = url.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 120);
+  const storagePath = `product_${productId}/url_${slug}.txt`;
+  const { data, error } = await supabase.storage.from(UPLOADS_BUCKET).download(storagePath);
+  if (error || !data) return null;
+  return await data.text();
 }
 
 // Downloads a stored product file from Supabase and extracts its text.

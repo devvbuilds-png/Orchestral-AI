@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 import { db } from "./db";
 import { products, productMembers, conversations, messages, organisations, organisationMembers } from "@shared/schema";
@@ -12,7 +12,7 @@ import { requireAuth } from "./auth";
 import {
   initializePKB,
   loadPKB,
-  savePKB,
+  modifyPKB,
   deletePKB,
   addDocumentInput,
   addUrlInput,
@@ -31,6 +31,8 @@ import {
   crawlWebsite,
   chunkText,
   cleanText,
+  storeUrlText,
+  loadStoredUrlText,
 } from "./services/ingestion-service";
 import { extractFromMultipleChunks } from "./agents/information-extractor";
 import { runSynthesizer, scheduleSynthesizer } from "./agents/synthesizer-function";
@@ -40,8 +42,8 @@ import {
   generateInitialSummary,
 } from "./agents/product-interviewer";
 import { streamExplainProduct, explainCIChat, formatPKBForContext, type ProductSummary } from "./agents/product-explainer";
-import { callLLM, parseJSONResponse } from "./agents/base-agent";
-import type { AgentContext, } from "./agents/base-agent";
+import { callLLM, parseJSONResponse, buildConversationHistory } from "./agents/base-agent";
+import type { AgentContext } from "./agents/base-agent";
 import type { ProductType, PrimaryMode, OrgPKB } from "@shared/schema";
 
 // ============================================================
@@ -172,6 +174,32 @@ const upload = multer({
 });
 
 // ============================================================
+// Gap fill helpers
+// ============================================================
+
+/** Normalize display-style field paths to dot-notation: "Pricing.Model" → "pricing.model" */
+function normalizeFieldPath(raw: string): string {
+  return raw
+    .split(".")
+    .map((seg) => seg.trim().toLowerCase().replace(/\s+/g, "_"))
+    .join(".");
+}
+
+/** Set a value at a dot-notation path, creating intermediate objects as needed */
+function setNestedValue(obj: any, path: string, value: any): void {
+  const parts = path.split(".");
+  let current = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const key = parts[i];
+    if (!current[key] || typeof current[key] !== "object") {
+      current[key] = {};
+    }
+    current = current[key];
+  }
+  current[parts[parts.length - 1]] = value;
+}
+
+// ============================================================
 // SSE headers helper
 // ============================================================
 
@@ -285,10 +313,23 @@ export async function registerRoutes(
   app.get("/api/products/:productId", async (req: Request, res: Response) => {
     try {
       const productId = req.params.productId as string;
-      const pkb = await loadPKB(productId);
-      if (!pkb) {
+
+      // Check the DB first — the product must exist there
+      const [productRow] = await db
+        .select({ id: products.id, product_type: products.product_type })
+        .from(products)
+        .where(eq(products.id, parseInt(productId)));
+      if (!productRow) {
         return res.status(404).json({ error: "Product not found" });
       }
+
+      // Load PKB from storage — initialise on the fly if the file is missing
+      let pkb = await loadPKB(productId);
+      if (!pkb) {
+        const pType = (productRow.product_type as "b2b" | "b2c" | "hybrid") || "b2b";
+        pkb = await initializePKB(productId, pType);
+      }
+
       res.json({ pkb });
     } catch (error) {
       console.error("Get product error:", error);
@@ -348,7 +389,9 @@ export async function registerRoutes(
       }
       const { url } = parsed.data;
       const { text, title } = await fetchUrlContent(url);
+      const cleaned = cleanText(text);
       await addUrlInput(productId, url, title);
+      await storeUrlText(productId, url, cleaned);
 
       res.json({
         success: true,
@@ -444,24 +487,40 @@ export async function registerRoutes(
         }
       }
 
+      let urlsFailed = 0;
       if (pkb.meta.inputs?.urls) {
         for (const urlInfo of pkb.meta.inputs.urls) {
           try {
-            const { text } = await fetchUrlContent(urlInfo.url);
-            allTexts.push({ text: cleanText(text), source: urlInfo.url, type: "url" });
+            // Try stored text first, fall back to live fetch
+            let text = await loadStoredUrlText(productId, urlInfo.url);
+            if (!text) {
+              const fetched = await fetchUrlContent(urlInfo.url);
+              text = cleanText(fetched.text);
+              await storeUrlText(productId, urlInfo.url, text);
+            }
+            allTexts.push({ text, source: urlInfo.url, type: "url" });
           } catch (e) {
-            console.error(`Failed to fetch ${urlInfo.url}:`, e);
+            urlsFailed++;
+            const msg = e instanceof Error ? e.message : "Unknown error";
+            console.error(`Failed to fetch ${urlInfo.url}:`, msg);
+            res.write(`data: ${JSON.stringify({ type: "error", error: `Failed to fetch URL: ${urlInfo.url} — ${msg}` })}\n\n`);
           }
         }
       }
 
+      // Collect all proposed updates from all documents/URLs, then apply in one batch
+      const allUpdates: import("@shared/schema").ProposedUpdate[] = [];
       for (const { text, source, type } of allTexts) {
         const chunks = chunkText(text);
         const updates = await extractFromMultipleChunks(context, chunks, source, type);
-        for (const update of updates) {
-          const result = await applyProposedUpdate(productId, update, context.orgId);
-          if (!result.accepted) {
-            console.log(`Update rejected for ${update.field_path}: ${result.reason}`);
+        allUpdates.push(...updates);
+      }
+
+      if (allUpdates.length > 0) {
+        const decisions = await batchApplyUpdates(productId, allUpdates, context.orgId);
+        for (let i = 0; i < decisions.length; i++) {
+          if (!decisions[i].accepted) {
+            console.log(`Update rejected for ${allUpdates[i].field_path}: ${decisions[i].reason}`);
           }
         }
       }
@@ -492,14 +551,67 @@ export async function registerRoutes(
       const initialSummary = await generateInitialSummary(context, updatedPkb || pkb);
       res.write(`data: ${JSON.stringify({ type: "content", data: initialSummary })}\n\n`);
 
-      const hasGaps = synthOut
-        ? (synthOut.gapAnalysis.critical.length + synthOut.gapAnalysis.standard.length) > 0
-        : false;
+      const gapCount = synthOut
+        ? synthOut.gapAnalysis.critical.length + synthOut.gapAnalysis.standard.length
+        : 0;
+      const hasGaps = gapCount > 0;
+
+      // Save ingestion_complete message to the most recent conversation for this product
+      try {
+        const userId = req.user?.id;
+        const productIdInt = parseInt(productId);
+        console.log(`[INGESTION_MSG] Attempting to save ingestion message for product ${productIdInt}, userId=${userId}`);
+
+        if (!userId) {
+          console.error("[INGESTION_MSG] req.user is missing — auth may not work for SSE requests");
+        }
+
+        // Find the most recent conversation for this product and user
+        let [conv] = await db
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.product_id, productIdInt),
+              eq(conversations.user_id, userId!),
+            )
+          )
+          .orderBy(desc(conversations.updated_at))
+          .limit(1);
+
+        console.log(`[INGESTION_MSG] Found conversation: ${conv ? conv.id : "NONE"}`);
+
+        // If no conversation exists, create one
+        if (!conv) {
+          console.log(`[INGESTION_MSG] Creating new conversation for product ${productIdInt}`);
+          [conv] = await db
+            .insert(conversations)
+            .values({ product_id: productIdInt, user_id: userId!, mode: "learner" })
+            .returning({ id: conversations.id });
+          console.log(`[INGESTION_MSG] Created conversation ${conv.id}`);
+        }
+
+        const factsApplied = allUpdates.length;
+        const ingestionContent = hasGaps
+          ? `[INGESTION_COMPLETE:${gapCount}] I've processed your content and captured ${factsApplied} facts — check the Knowledge tab to see them. I identified ${gapCount} knowledge gaps that would improve answer quality.`
+          : `[INGESTION_COMPLETE:0] I've processed your content and captured ${factsApplied} facts — the knowledge base is looking good. Check the Knowledge tab to see what was captured.`;
+
+        console.log(`[INGESTION_MSG] Inserting message into conversation ${conv.id}, content length=${ingestionContent.length}`);
+        await db.insert(messages).values({
+          conversation_id: conv.id,
+          role: "assistant",
+          content: ingestionContent,
+        });
+        console.log(`[INGESTION_MSG] Ingestion message saved successfully for product ${productIdInt}, conversation ${conv.id}`);
+      } catch (msgErr) {
+        console.error("[INGESTION_MSG] Failed to save ingestion_complete message:", msgErr);
+      }
 
       res.write(`data: ${JSON.stringify({
         type: "done",
         has_gaps: hasGaps,
         confidence: confidenceLevel,
+        urls_failed: urlsFailed,
       })}\n\n`);
       res.end();
     } catch (error) {
@@ -583,22 +695,19 @@ export async function registerRoutes(
         }
         const { resolution, note } = parsed.data;
 
-        const pkb = await loadPKB(productId);
-        if (!pkb) {
-          return res.status(404).json({ error: "Product not found" });
-        }
-
-        const item = pkb.review_inbox?.find(i => i.item_id === itemId);
-        if (!item) {
+        let resolvedItem: any = null;
+        await modifyPKB(productId, (pkb) => {
+          const item = pkb.review_inbox?.find(i => i.item_id === itemId);
+          if (!item) return;
+          item.status = resolution;
+          item.resolved_at = new Date().toISOString();
+          if (note) item.resolved_by = note;
+          resolvedItem = item;
+        });
+        if (!resolvedItem) {
           return res.status(404).json({ error: "Inbox item not found" });
         }
-
-        item.status = resolution;
-        item.resolved_at = new Date().toISOString();
-        if (note) item.resolved_by = note;
-
-        await savePKB(productId, pkb);
-        res.json({ success: true, item });
+        res.json({ success: true, item: resolvedItem });
       } catch (error) {
         console.error("Resolve inbox error:", error);
         res.status(500).json({ error: "Failed to resolve inbox item" });
@@ -725,13 +834,29 @@ export async function registerRoutes(
         // Track this conversation as a founder session (once per conversationId)
         await addFounderSession(productId, conversationId);
 
+        // Load conversation history for multi-turn context
+        const convIdIntForHistory = parseInt(conversationId);
+        const historyRows = await db
+          .select({ role: messages.role, content: messages.content })
+          .from(messages)
+          .where(eq(messages.conversation_id, convIdIntForHistory))
+          .orderBy(messages.created_at)
+          .limit(20);
+        const conversationHistory = buildConversationHistory(historyRows);
+
         // Normalise empty message to the SESSION_START sentinel so the LLM
         // generates the mode-appropriate opening message.
         const effectiveMessage = message.trim() ? message : "[SESSION_START]";
-        const { response, updates } = await processFounderResponse(context, effectiveMessage);
+        const { response, updates } = await processFounderResponse(context, effectiveMessage, conversationHistory);
 
         for (const update of updates) {
           await applyProposedUpdate(productId, update, context.orgId);
+        }
+
+        // Trigger synthesizer if the Learner extracted any facts, so confidence/gaps/brief stay current.
+        // Placed here (before streaming) so it fires even if the client disconnects mid-stream.
+        if (updates.length > 0) {
+          scheduleSynthesizer(productId, context.orgId);
         }
 
         // Persist messages before streaming so they're in DB by the time the
@@ -749,7 +874,7 @@ export async function registerRoutes(
           await new Promise(resolve => setTimeout(resolve, 15));
         }
 
-        res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: "done", facts_extracted: updates.length })}\n\n`);
         res.end();
       } catch (error) {
         console.error("Chat error:", error);
@@ -813,13 +938,23 @@ export async function registerRoutes(
 
         const suggestedQuestions: string[] = pkb.meta.suggested_questions ?? [];
 
+        // Load conversation history for multi-turn context
+        const explainConvIdForHistory = parseInt(conversationId);
+        const explainHistoryRows = await db
+          .select({ role: messages.role, content: messages.content })
+          .from(messages)
+          .where(eq(messages.conversation_id, explainConvIdForHistory))
+          .orderBy(messages.created_at)
+          .limit(20);
+        const explainHistory = buildConversationHistory(explainHistoryRows);
+
         // Collect full response while streaming so we can persist it afterwards
         let fullExplainResponse = "";
         for await (const chunk of streamExplainProduct(context, message, {
           surface: "product_chat",
           isFirstExplainerUse,
           suggestedQuestions,
-        })) {
+        }, explainHistory)) {
           fullExplainResponse += chunk;
           res.write(`data: ${JSON.stringify({ type: "content", data: chunk })}\n\n`);
         }
@@ -868,28 +1003,32 @@ export async function registerRoutes(
       };
 
       if (answers && answers.length > 0) {
-        const currentGaps = pkb.gaps?.current || [];
-        const combinedMessage = answers
-          .map((a) => {
-            const gapObj = currentGaps.find((g) => g.field_path === a.field_path);
-            const question = gapObj?.question ?? a.field_path;
-            return `Q: ${question}\nA: ${a.answer}`;
-          })
-          .join("\n\n");
-        const { updates } = await processFounderResponse(context, combinedMessage);
-        for (const update of updates) {
-          await applyProposedUpdate(productId, update, context.orgId);
-        }
+        await modifyPKB(productId, (freshPkb) => {
+          for (const { field_path, answer } of answers) {
+            const normalized = normalizeFieldPath(field_path);
+            const fact = {
+              value: answer,
+              sources: [{
+                source_type: "founder" as const,
+                source_ref: "gap_fill",
+                captured_at: new Date().toISOString(),
+                evidence: answer,
+              }],
+              quality_tag: "ok" as const,
+            };
+            setNestedValue(freshPkb.facts, normalized, fact);
+          }
+        });
       }
 
       if (skipped && skipped.length > 0) {
-        const freshPkb = await loadPKB(productId);
-        if (freshPkb?.gaps?.current) {
-          freshPkb.gaps.current = freshPkb.gaps.current.map((g) =>
-            skipped.includes(g.field_path) ? { ...g, do_not_ask: true } : g
-          );
-          await savePKB(productId, freshPkb);
-        }
+        await modifyPKB(productId, (freshPkb) => {
+          if (freshPkb.gaps?.current) {
+            freshPkb.gaps.current = freshPkb.gaps.current.map((g) =>
+              skipped.includes(g.field_path) ? { ...g, do_not_ask: true } : g
+            );
+          }
+        });
       }
 
       scheduleSynthesizer(productId, context.orgId);

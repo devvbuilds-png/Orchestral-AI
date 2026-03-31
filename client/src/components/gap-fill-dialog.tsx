@@ -14,10 +14,9 @@ interface GapFillDialogProps {
   productId: number | null;
   gap: { key: string; q: string; why: string; severity: string } | null;
   pkb: PKB | null;
-  onProcess: () => void;
 }
 
-export const GapFillDialog = ({ open, onClose, productId, gap, pkb, onProcess }: GapFillDialogProps) => {
+export const GapFillDialog = ({ open, onClose, productId, gap, pkb }: GapFillDialogProps) => {
   const { minimal } = useMinimalMode();
   const queryClient = useQueryClient();
 
@@ -133,7 +132,6 @@ export const GapFillDialog = ({ open, onClose, productId, gap, pkb, onProcess }:
       queryClient.invalidateQueries({ queryKey: [`/api/products/${productId}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
       onClose();
-      onProcess();
     },
     onError: (err: any) => {
       setSubmitError(err?.message ?? "Failed to save answers. Please try again.");

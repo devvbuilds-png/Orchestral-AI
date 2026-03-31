@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sparkles, Users, Trophy, BarChart3, ChevronDown, Globe, Calendar, TrendingUp, Shield, Lightbulb, Target, Rocket, Layers, Eye, EyeOff, Check } from "lucide-react";
+import { Sparkles, Users, Trophy, BarChart3, ChevronDown, Globe, Calendar, TrendingUp, Shield, Lightbulb, Target, Rocket, Layers, Eye, EyeOff, Check, MessageSquare, Megaphone } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useMinimalMode } from "@/contexts/MinimalModeContext";
@@ -34,41 +34,162 @@ interface KnowledgeTabProps {
   closeGapFill: () => void;
 }
 
-function getFacts(pkb: PKB | null): Array<{ category: string; emoji: string; color: string; bg: string; border: string; icon: any; facts: Array<{ label: string; value: string; sources: string; lifecycle: FactLifecycle; sensitive: boolean }> }> {
+type FactItem = { label: string; value: string; sources: string; lifecycle: FactLifecycle; sensitive: boolean };
+type FactSection = { category: string; emoji: string; color: string; bg: string; border: string; icon: any; facts: FactItem[] };
+
+const sectionStyle: Record<string, { emoji: string; color: string; bg: string; border: string; icon: any }> = {
+  product_identity:        { emoji: "🏷️", color: "text-glow-blue",   bg: "bg-glow-blue/10",   border: "border-glow-blue/20",   icon: Shield },
+  value_proposition:       { emoji: "💎", color: "text-glow-purple", bg: "bg-glow-purple/10", border: "border-glow-purple/20", icon: Rocket },
+  target_users:            { emoji: "🎯", color: "text-glow-amber",  bg: "bg-glow-amber/10",  border: "border-glow-amber/20",  icon: Target },
+  use_cases:               { emoji: "🧩", color: "text-glow-cyan",   bg: "bg-glow-cyan/10",   border: "border-glow-cyan/20",   icon: Layers },
+  features:                { emoji: "⚡", color: "text-glow-purple", bg: "bg-glow-purple/10", border: "border-glow-purple/20", icon: Sparkles },
+  pricing:                 { emoji: "💰", color: "text-glow-pink",   bg: "bg-glow-pink/10",   border: "border-glow-pink/20",   icon: Shield },
+  differentiation:         { emoji: "🏆", color: "text-glow-amber",  bg: "bg-glow-amber/10",  border: "border-glow-amber/20",  icon: Trophy },
+  proof_assets:            { emoji: "📊", color: "text-glow-blue",   bg: "bg-glow-blue/10",   border: "border-glow-blue/20",   icon: BarChart3 },
+  constraints_assumptions: { emoji: "🔒", color: "text-glow-pink",   bg: "bg-glow-pink/10",   border: "border-glow-pink/20",   icon: Shield },
+};
+
+const defaultStyle = { emoji: "📦", color: "text-glow-blue", bg: "bg-glow-blue/10", border: "border-glow-blue/20", icon: Layers };
+
+function prettifyLabel(key: string): string {
+  return key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function isFactField(obj: any): boolean {
+  return obj && typeof obj === "object" && "value" in obj && "sources" in obj;
+}
+
+function unwrapValue(field: any): any {
+  if (field && typeof field === "object" && "value" in field) return field.value;
+  return field;
+}
+
+function formatValue(val: any): string {
+  if (val == null) return "";
+  if (typeof val === "string") return val;
+  if (Array.isArray(val)) {
+    return val.map(item => typeof item === "string" ? item : (item?.name ?? JSON.stringify(item))).join(", ");
+  }
+  if (typeof val === "object") return JSON.stringify(val);
+  return String(val);
+}
+
+function extractFactsFromObject(obj: any): FactItem[] {
+  const facts: FactItem[] = [];
+  if (!obj || typeof obj !== "object") return facts;
+  for (const [key, field] of Object.entries(obj)) {
+    if (!field || key === "tiers") continue;
+    if (isFactField(field)) {
+      const f = field as any;
+      const val = formatValue(f.value);
+      if (val) {
+        facts.push({
+          label: prettifyLabel(key),
+          value: val,
+          sources: (f.sources ?? []).map((s: any) => s.source_ref ?? s.type ?? "").filter(Boolean).join(", "),
+          lifecycle: toLifecycle(f.lifecycle_status),
+          sensitive: f.sensitive ?? false,
+        });
+      }
+    }
+  }
+  return facts;
+}
+
+function extractArraySection(arr: any[], sectionName: string): FactItem[] {
+  const facts: FactItem[] = [];
+  arr.forEach((item, idx) => {
+    const unwrappedItem = unwrapValue(item);
+    if (!unwrappedItem || typeof unwrappedItem !== "object") return;
+    const nameField = unwrappedItem.name;
+    const itemLabel = isFactField(nameField) ? formatValue(nameField.value) : `${prettifyLabel(sectionName).replace(/s$/, "")} ${idx + 1}`;
+    for (const [key, field] of Object.entries(unwrappedItem)) {
+      if (!field || !isFactField(field)) continue;
+      const f = field as any;
+      const val = formatValue(f.value);
+      if (!val) continue;
+      facts.push({
+        label: key === "name" ? itemLabel : `${itemLabel} — ${prettifyLabel(key)}`,
+        value: val,
+        sources: (f.sources ?? []).map((s: any) => s.source_ref ?? s.type ?? "").filter(Boolean).join(", "),
+        lifecycle: toLifecycle(f.lifecycle_status),
+        sensitive: f.sensitive ?? false,
+      });
+    }
+  });
+  return facts;
+}
+
+function getFacts(pkb: PKB | null): FactSection[] {
   if (!pkb) return [];
-  const sections = [];
+  const sections: FactSection[] = [];
 
-  if (pkb.facts?.product_identity) {
-    const facts = [];
-    const pi = pkb.facts.product_identity;
-    if (pi.name) facts.push({ label: "Name", value: String(pi.name.value ?? ""), sources: "", lifecycle: toLifecycle(pi.name.lifecycle_status), sensitive: false });
-    if (pi.category) facts.push({ label: "Category", value: String(pi.category.value ?? ""), sources: "", lifecycle: toLifecycle(pi.category.lifecycle_status), sensitive: false });
-    if (pi.one_liner) facts.push({ label: "One-liner", value: String(pi.one_liner.value ?? ""), sources: "", lifecycle: toLifecycle(pi.one_liner.lifecycle_status), sensitive: false });
-    if (facts.length) sections.push({ category: "Product Identity", emoji: "🏷️", color: "text-glow-blue", bg: "bg-glow-blue/10", border: "border-glow-blue/20", icon: Shield, facts });
+  if (pkb.facts) {
+    for (const [sectionKey, sectionData] of Object.entries(pkb.facts)) {
+      if (!sectionData) continue;
+      const style = sectionStyle[sectionKey] ?? defaultStyle;
+      let facts: FactItem[] = [];
+
+      // sectionData could be a raw array, a FactField wrapping an array, or an object
+      const unwrapped = unwrapValue(sectionData);
+
+      if (Array.isArray(unwrapped)) {
+        // Array sections: features[], use_cases[]
+        facts = extractArraySection(unwrapped, sectionKey);
+      } else if (typeof sectionData === "object") {
+        // Object sections: product_identity, pricing, etc.
+        facts = extractFactsFromObject(sectionData);
+        // Handle pricing.tiers specifically
+        if (sectionKey === "pricing" && (sectionData as any).tiers) {
+          const rawTiers = unwrapValue((sectionData as any).tiers);
+          if (Array.isArray(rawTiers)) {
+            rawTiers.forEach((tier: any) => {
+              if (!tier) return;
+              const t = unwrapValue(tier) ?? tier;
+              const tierName = formatValue(unwrapValue(t.name) ?? t.name);
+              const tierPrice = formatValue(unwrapValue(t.price) ?? t.price);
+              const tierFeatures = unwrapValue(t.features) ?? t.features;
+              const parts = [tierPrice];
+              if (Array.isArray(tierFeatures) && tierFeatures.length) parts.push(tierFeatures.join(", "));
+              facts.push({
+                label: `Tier: ${tierName || "Unnamed"}`,
+                value: parts.filter(Boolean).join(" — "),
+                sources: "",
+                lifecycle: "Asserted",
+                sensitive: false,
+              });
+            });
+          }
+        }
+      }
+
+      if (facts.length) {
+        sections.push({ category: prettifyLabel(sectionKey), ...style, facts });
+      }
+    }
   }
 
-  if (pkb.facts?.value_proposition) {
-    const facts = [];
-    const vp = pkb.facts.value_proposition;
-    if (vp.primary_problem) facts.push({ label: "Primary Problem", value: String(vp.primary_problem.value ?? ""), sources: "", lifecycle: toLifecycle(vp.primary_problem.lifecycle_status), sensitive: false });
-    if (vp.top_benefits) facts.push({ label: "Top Benefits", value: String(vp.top_benefits.value ?? ""), sources: "", lifecycle: toLifecycle(vp.top_benefits.lifecycle_status), sensitive: false });
-    if (facts.length) sections.push({ category: "Value Proposition", emoji: "💎", color: "text-glow-purple", bg: "bg-glow-purple/10", border: "border-glow-purple/20", icon: Rocket, facts });
-  }
-
-  if (pkb.facts?.target_users) {
-    const facts = [];
-    const tu = pkb.facts.target_users;
-    if (tu.primary_users) facts.push({ label: "Primary Users", value: String(tu.primary_users.value ?? ""), sources: "", lifecycle: toLifecycle(tu.primary_users.lifecycle_status), sensitive: false });
-    if (tu.secondary_users) facts.push({ label: "Secondary Users", value: String(tu.secondary_users.value ?? ""), sources: "", lifecycle: toLifecycle(tu.secondary_users.lifecycle_status), sensitive: false });
-    if (facts.length) sections.push({ category: "Target Users", emoji: "🎯", color: "text-glow-amber", bg: "bg-glow-amber/10", border: "border-glow-amber/20", icon: Target, facts });
-  }
-
-  if (pkb.facts?.pricing) {
-    const facts = [];
-    const pricing = pkb.facts.pricing;
-    if (pricing.model) facts.push({ label: "Pricing Model", value: String(pricing.model.value ?? ""), sources: "", lifecycle: toLifecycle(pricing.model.lifecycle_status), sensitive: pricing.model.sensitive ?? false });
-    if (pricing.range_notes) facts.push({ label: "Pricing Notes", value: String(pricing.range_notes.value ?? ""), sources: "", lifecycle: toLifecycle(pricing.range_notes.lifecycle_status), sensitive: pricing.range_notes.sensitive ?? false });
-    if (facts.length) sections.push({ category: "Pricing", emoji: "💰", color: "text-glow-pink", bg: "bg-glow-pink/10", border: "border-glow-pink/20", icon: Shield, facts });
+  // Walk extensions (b2b, b2c)
+  if (pkb.extensions) {
+    for (const [extKey, extData] of Object.entries(pkb.extensions)) {
+      if (!extData || typeof extData !== "object") continue;
+      const allFacts: FactItem[] = [];
+      for (const [groupKey, groupData] of Object.entries(extData)) {
+        if (!groupData || typeof groupData !== "object") continue;
+        const unwrappedGroup = unwrapValue(groupData);
+        if (unwrappedGroup && typeof unwrappedGroup === "object" && !Array.isArray(unwrappedGroup)) {
+          const groupFacts = extractFactsFromObject(unwrappedGroup);
+          allFacts.push(...groupFacts);
+        }
+      }
+      if (allFacts.length) {
+        sections.push({
+          category: `${extKey.toUpperCase()} Extensions`,
+          ...defaultStyle,
+          facts: allFacts,
+        });
+      }
+    }
   }
 
   return sections;
@@ -224,22 +345,22 @@ const KnowledgeTab = ({ product, pkb, gapDialogOpen, selectedGap, openGapFill, c
               {
                 icon: Sparkles, color: "text-glow-purple", bg: "bg-glow-purple/10", border: "border-glow-purple/20",
                 title: "What It Is",
-                text: String(pkb?.facts?.value_proposition?.primary_problem?.value ?? pkb?.facts?.product_identity?.name?.value ?? "No description captured yet."),
-                italic: !pkb?.facts?.value_proposition?.primary_problem?.value,
+                text: String(pkb?.facts?.value_proposition?.primary_problem?.value ?? (pkb?.derived_insights as any)?.product_brief?.simple_summary ?? pkb?.facts?.product_identity?.name?.value ?? "No description captured yet."),
+                italic: !pkb?.facts?.value_proposition?.primary_problem?.value && !(pkb?.derived_insights as any)?.product_brief?.simple_summary,
                 emoji: "🧩",
               },
               {
                 icon: Users, color: "text-glow-cyan", bg: "bg-glow-cyan/10", border: "border-glow-cyan/20",
                 title: "Who It's For",
-                text: String(pkb?.facts?.target_users?.primary_users?.value ?? "No target users captured yet."),
-                italic: !pkb?.facts?.target_users?.primary_users?.value,
+                text: String(pkb?.facts?.target_users?.primary_users?.value ?? (pkb?.derived_insights as any)?.product_brief?.who_its_for ?? "No target users captured yet."),
+                italic: !pkb?.facts?.target_users?.primary_users?.value && !(pkb?.derived_insights as any)?.product_brief?.who_its_for,
                 emoji: "👥",
               },
               {
                 icon: Trophy, color: "text-glow-amber", bg: "bg-glow-amber/10", border: "border-glow-amber/20",
                 title: "Why It Wins",
-                text: String(pkb?.facts?.differentiation?.why_we_win?.value ?? "No differentiation captured yet."),
-                italic: !pkb?.facts?.differentiation?.why_we_win?.value,
+                text: String(pkb?.facts?.differentiation?.why_we_win?.value ?? (pkb?.derived_insights as any)?.product_brief?.why_it_wins ?? "No differentiation captured yet."),
+                italic: !pkb?.facts?.differentiation?.why_we_win?.value && !(pkb?.derived_insights as any)?.product_brief?.why_it_wins,
                 emoji: "🏆",
               },
             ].map((card, i) => (
@@ -261,6 +382,7 @@ const KnowledgeTab = ({ product, pkb, gapDialogOpen, selectedGap, openGapFill, c
               </motion.div>
             ))}
           </div>
+          <p className="text-[11px] text-muted-foreground/50 italic">These are AI-generated insights derived from your facts — not stored information. Improve them by adding or correcting facts through chat or document uploads.</p>
 
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -307,6 +429,57 @@ const KnowledgeTab = ({ product, pkb, gapDialogOpen, selectedGap, openGapFill, c
             {pkb?.meta.kb_health_narrative && (
               <p className="mt-4 text-xs text-muted-foreground leading-relaxed">
                 {pkb.meta.kb_health_narrative}
+              </p>
+            )}
+          </motion.div>
+
+          {(pkb?.derived_insights as any)?.product_brief?.key_message_pillars?.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className={`glass-card p-5 border ${minimal ? "border-border" : "border-primary/20"}`}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${minimal ? "bg-secondary" : "bg-primary/10"}`}>
+                  <MessageSquare className={`h-4 w-4 ${minimal ? "text-muted-foreground" : "text-primary"}`} />
+                </div>
+                <h3 className="text-sm font-bold text-foreground">Key Message Pillars</h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {((pkb?.derived_insights as any)?.product_brief?.key_message_pillars as string[]).map((pillar: string, index: number) => (
+                  <span
+                    key={index}
+                    className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                      minimal ? "bg-secondary text-foreground border border-border" : "bg-primary/10 text-primary border border-primary/20"
+                    }`}
+                  >
+                    {pillar}
+                  </span>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.43 }}
+            className={`glass-card p-5 border border-dashed ${minimal ? "border-border" : "border-glow-purple/20"}`}
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${minimal ? "bg-secondary" : "bg-glow-purple/10"}`}>
+                <Megaphone className={`h-4 w-4 ${minimal ? "text-muted-foreground" : "text-glow-purple"}`} />
+              </div>
+              <h3 className="text-sm font-bold text-foreground">Sample Pitch</h3>
+            </div>
+            {(pkb?.derived_insights as any)?.product_brief?.sample_pitch ? (
+              <p className="text-sm text-muted-foreground leading-relaxed italic pl-12">
+                "{(pkb?.derived_insights as any)?.product_brief?.sample_pitch}"
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground/40 italic pl-12">
+                A sample pitch will be generated once more product facts are captured.
               </p>
             )}
           </motion.div>

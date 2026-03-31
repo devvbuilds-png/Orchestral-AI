@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(find /mnt/d/Orchestral-AI/server/replit_integrations -type f -name *.ts)",
+      "Bash(npm install:*)",
+      "Bash(git log:*)"
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useParams } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -49,19 +49,11 @@ const ProductWorkspace = () => {
 
   // Processing pipeline state
   const [processingState, setProcessingState] = useState<ProcessingState>(INITIAL_PROCESSING);
-  // Timestamp set when SSE "done" fires; cleared once PKB refresh is detected
-  const processingCompletedAtRef = useRef<number | null>(null);
 
   // Lifted gap dialog state (was in KnowledgeTab)
   const [gapDialogOpen, setGapDialogOpen] = useState(false);
   const [selectedGap, setSelectedGap] = useState<{
     key: string; q: string; why: string; severity: string;
-  } | null>(null);
-
-  // Pending ingestion complete message for ChatTab
-  const [pendingIngestionMessage, setPendingIngestionMessage] = useState<{
-    gapsFound: number;
-    id: string;
   } | null>(null);
 
   const productIdNum = productId ? parseInt(productId) : null;
@@ -79,7 +71,7 @@ const ProductWorkspace = () => {
 
   const product = productsData?.find(p => p.id === productIdNum) ?? null;
 
-  const { data: pkbData, dataUpdatedAt: pkbDataUpdatedAt } = useQuery<{ pkb: PKB }>({
+  const { data: pkbData } = useQuery<{ pkb: PKB }>({
     queryKey: [`/api/products/${productId}`],
     queryFn: async () => {
       const res = await fetch(`/api/products/${productId}`, { credentials: "include" });
@@ -110,20 +102,6 @@ const ProductWorkspace = () => {
   const productName = product?.name ?? "Product";
   const kbHealthNarrative: string = pkb?.meta.kb_health_narrative ?? "";
 
-  // After processing completes and PKB refetches, fire the pending ingestion message
-  useEffect(() => {
-    if (processingCompletedAtRef.current === null) return;
-    // Wait until the PKB query has been refreshed after processing completed
-    if (pkbDataUpdatedAt < processingCompletedAtRef.current) return;
-
-    const count = pkb?.gaps?.current?.length ?? 0;
-    setPendingIngestionMessage({
-      gapsFound: count,
-      id: String(processingCompletedAtRef.current),
-    });
-    setProcessingState(s => ({ ...s, gapsFound: count }));
-    processingCompletedAtRef.current = null;
-  }, [pkbDataUpdatedAt, pkb]);
 
   // Run the /process SSE pipeline
   const runProcess = useCallback(async () => {
@@ -177,17 +155,23 @@ const ProductWorkspace = () => {
             } else if (event.type === "confidence") {
               setProcessingState(s => ({ ...s, progress: 90 }));
             } else if (event.type === "done") {
-              const ts = Date.now();
-              processingCompletedAtRef.current = ts;
               setProcessingState(s => ({
                 ...s,
                 isProcessing: false,
                 progress: 100,
-                completedAt: new Date(ts),
+                completedAt: new Date(),
               }));
-              // Refetch PKB and product list so Knowledge tab + confidence badge update
+              // Refetch PKB, product list, conversations, and messages so the
+              // server-created ingestion_complete message appears in chat
               queryClient.invalidateQueries({ queryKey: [`/api/products/${productId}`] });
               queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+              // Invalidate all conversation and message queries for this product
+              queryClient.invalidateQueries({
+                predicate: (query) => {
+                  const key = query.queryKey[0];
+                  return typeof key === "string" && key.startsWith(`/api/products/${productId}/conversations`);
+                },
+              });
             } else if (event.type === "error") {
               setProcessingState(s => ({
                 ...s,
@@ -243,7 +227,7 @@ const ProductWorkspace = () => {
   };
 
   return (
-    <div className="min-h-screen outer-frame flex flex-col items-center">
+    <div className="h-screen outer-frame flex flex-col items-center overflow-hidden">
       {!minimal && <ParticleBackground />}
 
       {/* Branding */}
@@ -258,8 +242,8 @@ const ProductWorkspace = () => {
       </div>
 
       {/* Inner Panel */}
-      <div className="w-full max-w-5xl px-6 pb-8 flex-1 flex flex-col">
-        <div className="inner-panel rounded-2xl flex-1 flex flex-col relative">
+      <div className="w-full max-w-5xl px-6 pb-8 flex-1 flex flex-col min-h-0">
+        <div className="inner-panel rounded-2xl flex-1 flex flex-col relative min-h-0">
           {/* Processing Overlay — controlled by SSE state */}
           <ProcessingOverlay visible={processingState.isProcessing} />
 
@@ -356,8 +340,9 @@ const ProductWorkspace = () => {
             </div>
           </div>
 
-          {/* Tab content */}
-          <div className="flex-1 px-6 py-6 overflow-y-auto">
+          {/* Tab content — Chat uses overflow-hidden so its message list scrolls internally;
+               other tabs use overflow-y-auto so their long content scrolls as a page. */}
+          <div className={`flex-1 min-h-0 flex flex-col px-6 py-6 ${activeTab === "Chat" ? "overflow-hidden" : "overflow-y-auto"}`}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}
@@ -365,6 +350,7 @@ const ProductWorkspace = () => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
+                className={activeTab === "Chat" ? "flex-1 flex flex-col min-h-0" : undefined}
               >
                 {activeTab === "Chat" && product && (
                   <ChatTab
@@ -373,8 +359,7 @@ const ProductWorkspace = () => {
                     processingState={processingState}
                     openGapFill={openGapFill}
                     onProcess={runProcess}
-                    pendingIngestionMessage={pendingIngestionMessage}
-                    onIngestionMessageShown={() => setPendingIngestionMessage(null)}
+                    newChatTrigger={newChatTrigger}
                   />
                 )}
                 {activeTab === "Knowledge" && product && (
@@ -410,7 +395,6 @@ const ProductWorkspace = () => {
         productId={productIdNum}
         gap={selectedGap}
         pkb={pkb}
-        onProcess={runProcess}
       />
 
       {/* Review Queue Panel */}

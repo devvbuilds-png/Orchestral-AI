@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Zap, ArrowRight, ChevronDown, Bell } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
@@ -147,7 +148,7 @@ const Dashboard = () => {
         >
           {/* CI mode toggle */}
           <div className="flex justify-center mb-3">
-            <TooltipProvider delayDuration={300}>
+            <TooltipProvider delayDuration={300} skipDelayDuration={0}>
               <div className="flex rounded-full ring-1 ring-border/50 bg-secondary/60 p-0.5 gap-0.5">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -199,13 +200,27 @@ const Dashboard = () => {
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
-          {chatResponse && (
+          {chatMutation.isPending && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-4 rounded-2xl bg-secondary/60 ring-1 ring-border/50 px-5 py-4 text-sm text-foreground leading-relaxed"
+              className="mt-4 rounded-2xl bg-secondary/60 ring-1 ring-border/50 px-5 py-4 flex items-center gap-3"
             >
-              {chatResponse}
+              <div className="flex gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+              </div>
+              <span className="text-xs text-muted-foreground">Thinking…</span>
+            </motion.div>
+          )}
+          {chatResponse && !chatMutation.isPending && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-4 rounded-2xl bg-secondary/60 ring-1 ring-border/50 px-5 py-4 text-sm text-foreground leading-relaxed prose prose-sm prose-invert max-w-none"
+            >
+              <ReactMarkdown>{chatResponse}</ReactMarkdown>
             </motion.div>
           )}
         </motion.div>

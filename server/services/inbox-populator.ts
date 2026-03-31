@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import type { PKB, InboxItem, FactField } from "@shared/schema";
-import { savePKB } from "./pkb-storage";
+import { modifyPKB } from "./pkb-storage";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -166,7 +166,9 @@ export async function populateInbox(sessionId: string, pkb: PKB): Promise<PKB> {
 
   if (newItems.length > 0) {
     pkb.review_inbox = [...inbox, ...newItems];
-    savePKB(sessionId, pkb);
+    await modifyPKB(sessionId, (freshPkb) => {
+      freshPkb.review_inbox = pkb.review_inbox;
+    });
   }
 
   return pkb;

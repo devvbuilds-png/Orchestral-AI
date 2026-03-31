@@ -142,6 +142,8 @@ export function buildOrgContext(org: OrgPKB): string {
   return `--- Organisation Context ---\n${lines.join("\n")}\n---`;
 }
 
+export type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
+
 export async function callLLM(
   systemPrompt: string,
   userPrompt: string,
@@ -150,12 +152,14 @@ export async function callLLM(
     temperature?: number;
     maxTokens?: number;
     responseFormat?: "text" | "json";
+    conversationHistory?: ChatHistoryMessage[];
   } = {}
 ): Promise<string> {
   const {
     model = DEFAULT_MODEL,
     maxTokens = 4096,
     responseFormat = "text",
+    conversationHistory = [],
   } = options;
 
   try {
@@ -163,6 +167,7 @@ export async function callLLM(
       model,
       messages: [
         { role: "system", content: systemPrompt },
+        ...conversationHistory,
         { role: "user", content: userPrompt },
       ],
       max_completion_tokens: maxTokens,
@@ -186,15 +191,17 @@ export async function* streamLLM(
   options: {
     model?: string;
     maxTokens?: number;
+    conversationHistory?: ChatHistoryMessage[];
   } = {}
 ): AsyncGenerator<string> {
-  const { model = DEFAULT_MODEL, maxTokens = 4096 } = options;
+  const { model = DEFAULT_MODEL, maxTokens = 4096, conversationHistory = [] } = options;
 
   try {
     const stream = await openai.chat.completions.create({
       model,
       messages: [
         { role: "system", content: systemPrompt },
+        ...conversationHistory,
         { role: "user", content: userPrompt },
       ],
       max_completion_tokens: maxTokens,
@@ -211,6 +218,30 @@ export async function* streamLLM(
     console.error("LLM stream failed:", error);
     throw error;
   }
+}
+
+// Filters system signals and trims to a token budget (~4 chars/token).
+// Starts from the most recent message and works backwards.
+const HISTORY_TOKEN_BUDGET = 3000;
+const SYSTEM_SIGNAL_RE = /^\[SESSION_START\]$|^\[INGESTION_COMPLETE:\d+\]/;
+
+export function buildConversationHistory(
+  rows: { role: string; content: string }[],
+): ChatHistoryMessage[] {
+  let tokensUsed = 0;
+  const result: ChatHistoryMessage[] = [];
+
+  // Walk backwards from most recent
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (SYSTEM_SIGNAL_RE.test(row.content)) continue;
+    const estimatedTokens = Math.ceil(row.content.length / 4);
+    if (tokensUsed + estimatedTokens > HISTORY_TOKEN_BUDGET) break;
+    tokensUsed += estimatedTokens;
+    result.unshift({ role: row.role as "user" | "assistant", content: row.content });
+  }
+
+  return result;
 }
 
 export function parseJSONResponse<T>(response: string): T | null {

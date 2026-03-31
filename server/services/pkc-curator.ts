@@ -1,5 +1,5 @@
 import type { PKB, ProposedUpdate, PKCDecision, Source, Conflict, FactField, OrgConflict } from "@shared/schema";
-import { loadPKB, savePKB, loadOrgPKB, addOrgConflict } from "./pkb-storage";
+import { loadPKB, loadOrgPKB, addOrgConflict, modifyPKB } from "./pkb-storage";
 import { randomUUID } from "crypto";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -111,15 +111,17 @@ function setNestedValue(obj: any, path: string, value: any): void {
 }
 
 function valuesConflict(oldValue: any, newValue: any): boolean {
-  if (typeof oldValue !== typeof newValue) return true;
-  
-  if (typeof oldValue === "object" && oldValue !== null) {
-    const oldVal = oldValue.value ?? oldValue;
-    const newVal = newValue.value ?? newValue;
+  // Unwrap FactField wrappers — stored values are {value, sources, ...}, incoming may be raw
+  const oldVal = (typeof oldValue === "object" && oldValue !== null && "value" in oldValue) ? oldValue.value : oldValue;
+  const newVal = (typeof newValue === "object" && newValue !== null && "value" in newValue) ? newValue.value : newValue;
+
+  if (typeof oldVal !== typeof newVal) return true;
+
+  if (typeof oldVal === "object" && oldVal !== null) {
     return JSON.stringify(oldVal) !== JSON.stringify(newVal);
   }
-  
-  return oldValue !== newValue;
+
+  return oldVal !== newVal;
 }
 
 export function validateProposedUpdate(pkb: PKB, update: ProposedUpdate): PKCDecision {
@@ -168,19 +170,13 @@ export function validateProposedUpdate(pkb: PKB, update: ProposedUpdate): PKCDec
   return { accepted: true };
 }
 
-export async function applyProposedUpdate(productId: string, update: ProposedUpdate, orgId?: number): Promise<PKCDecision> {
-  const pkb = await loadPKB(productId);
-  if (!pkb) {
-    return {
-      accepted: false,
-      reason: `PKB not found for product ${productId}`,
-    };
-  }
-
+/**
+ * Apply a single update to a PKB object in-place. Does NOT load/save —
+ * that is handled by the caller (applyProposedUpdate or batchApplyUpdates).
+ */
+function applyUpdateToPKB(pkb: PKB, update: ProposedUpdate): PKCDecision {
   const validationResult = validateProposedUpdate(pkb, update);
-  if (!validationResult.accepted) {
-    return validationResult;
-  }
+  if (!validationResult.accepted) return validationResult;
 
   let targetObj: any;
   switch (update.target_section) {
@@ -209,6 +205,19 @@ export async function applyProposedUpdate(productId: string, update: ProposedUpd
   const existingValue = getNestedValue(targetObj, relativePath);
 
   if (update.target_section === "facts" || update.target_section.startsWith("extensions.")) {
+    if (existingValue && !valuesConflict(existingValue, update.value)) {
+      // Values match — merge sources and skip (no conflict, no overwrite)
+      if (update.sources && existingValue.sources) {
+        for (const src of update.sources) {
+          const isDup = existingValue.sources.some((s: any) =>
+            s.source_ref === src.source_ref && s.source_type === src.source_type
+          );
+          if (!isDup) existingValue.sources.push(src);
+        }
+      }
+      return { accepted: true };
+    }
+
     if (existingValue && valuesConflict(existingValue, update.value)) {
       const conflictId = randomUUID();
       const conflict: Conflict = {
@@ -227,7 +236,7 @@ export async function applyProposedUpdate(productId: string, update: ProposedUpd
 
       if (!pkb.gaps) pkb.gaps = { current: [], history: [] };
       if (!pkb.gaps.current) pkb.gaps.current = [];
-      
+
       pkb.gaps.current.push({
         gap_id: `gap_conflict_${conflictId}`,
         field_path: update.field_path,
@@ -235,8 +244,6 @@ export async function applyProposedUpdate(productId: string, update: ProposedUpd
         question: `I found conflicting information about ${relativePath}. The previous value was "${JSON.stringify(existingValue.value || existingValue)}" but new information says "${JSON.stringify(update.value.value || update.value)}". Which is correct?`,
         why_needed: "Conflicting information needs human resolution",
       });
-
-      await savePKB(productId, pkb);
 
       return {
         accepted: false,
@@ -271,17 +278,58 @@ export async function applyProposedUpdate(productId: string, update: ProposedUpd
     setNestedValue(targetObj, relativePath, update.value);
   }
 
-  await savePKB(productId, pkb);
+  return { accepted: true };
+}
 
-  // Org conflict detection — only for fact/extension commits, only when orgId is provided
+export async function applyProposedUpdate(productId: string, update: ProposedUpdate, orgId?: number): Promise<PKCDecision> {
+  let decision: PKCDecision = { accepted: false, reason: "Unknown error" };
+
+  await modifyPKB(productId, (pkb) => {
+    decision = applyUpdateToPKB(pkb, update);
+  });
+
+  // Org conflict detection — runs outside the lock (only reads org PKB)
   if (
+    decision.accepted &&
     orgId !== undefined &&
     (update.target_section === "facts" || update.target_section.startsWith("extensions."))
   ) {
-    await detectOrgConflict(productId, orgId, update, pkb);
+    const pkb = await loadPKB(productId);
+    if (pkb) await detectOrgConflict(productId, orgId, update, pkb);
   }
 
-  return { accepted: true };
+  return decision;
+}
+
+/**
+ * Apply multiple updates in a single lock acquisition — one load, one save.
+ * Used by the /process pipeline to avoid N round-trips.
+ */
+export async function batchApplyUpdates(productId: string, updates: ProposedUpdate[], orgId?: number): Promise<PKCDecision[]> {
+  const decisions: PKCDecision[] = [];
+
+  await modifyPKB(productId, (pkb) => {
+    for (const update of updates) {
+      decisions.push(applyUpdateToPKB(pkb, update));
+    }
+  });
+
+  // Org conflict detection for accepted fact/extension updates
+  const factUpdates = updates.filter((u, i) =>
+    decisions[i].accepted &&
+    orgId !== undefined &&
+    (u.target_section === "facts" || u.target_section.startsWith("extensions."))
+  );
+  if (factUpdates.length > 0) {
+    const pkb = await loadPKB(productId);
+    if (pkb) {
+      for (const update of factUpdates) {
+        await detectOrgConflict(productId, orgId!, update, pkb);
+      }
+    }
+  }
+
+  return decisions;
 }
 
 function determineQualityTag(sources: Source[]): "strong" | "ok" | "weak" {
@@ -302,62 +350,60 @@ export async function resolveConflict(
   resolution: "keep_old" | "use_new" | string,
   customValue?: any
 ): Promise<PKCDecision> {
-  const pkb = await loadPKB(productId);
-  if (!pkb) {
-    return { accepted: false, reason: "PKB not found" };
-  }
+  let decision: PKCDecision = { accepted: false, reason: "Unknown error" };
 
-  const conflictIndex = pkb.conflicts?.findIndex(c => c.conflict_id === conflictId);
-  if (conflictIndex === undefined || conflictIndex === -1) {
-    return { accepted: false, reason: "Conflict not found" };
-  }
+  await modifyPKB(productId, (pkb) => {
+    const conflictIndex = pkb.conflicts?.findIndex(c => c.conflict_id === conflictId);
+    if (conflictIndex === undefined || conflictIndex === -1) {
+      decision = { accepted: false, reason: "Conflict not found" };
+      return;
+    }
 
-  const conflict = pkb.conflicts![conflictIndex];
-  
-  let finalValue: any;
-  if (resolution === "keep_old") {
-    finalValue = conflict.value_a;
-  } else if (resolution === "use_new") {
-    finalValue = conflict.value_b;
-  } else {
-    finalValue = customValue ?? resolution;
-  }
+    const conflict = pkb.conflicts![conflictIndex];
 
-  const [section, ...pathParts] = conflict.field_path.split(".");
-  let targetObj: any;
-  
-  switch (section) {
-    case "facts":
-      targetObj = pkb.facts;
-      break;
-    case "extensions":
-      const extType = pathParts.shift();
-      if (extType === "b2b") targetObj = pkb.extensions?.b2b;
-      else if (extType === "b2c") targetObj = pkb.extensions?.b2c;
-      break;
-    default:
-      return { accepted: false, reason: "Invalid field path" };
-  }
+    let finalValue: any;
+    if (resolution === "keep_old") {
+      finalValue = conflict.value_a;
+    } else if (resolution === "use_new") {
+      finalValue = conflict.value_b;
+    } else {
+      finalValue = customValue ?? resolution;
+    }
 
-  if (targetObj) {
-    setNestedValue(targetObj, pathParts.join("."), finalValue);
-  }
+    const [section, ...pathParts] = conflict.field_path.split(".");
+    let targetObj: any;
 
-  conflict.resolution_status = "resolved";
-  conflict.resolved_at = new Date().toISOString();
-  conflict.resolution = resolution;
+    switch (section) {
+      case "facts":
+        targetObj = pkb.facts;
+        break;
+      case "extensions":
+        const extType = pathParts.shift();
+        if (extType === "b2b") targetObj = pkb.extensions?.b2b;
+        else if (extType === "b2c") targetObj = pkb.extensions?.b2c;
+        break;
+      default:
+        decision = { accepted: false, reason: "Invalid field path" };
+        return;
+    }
 
-  if (pkb.gaps?.current) {
-    pkb.gaps.current = pkb.gaps.current.filter(
-      g => !g.gap_id.includes(conflictId)
-    );
-  }
+    if (targetObj) {
+      setNestedValue(targetObj, pathParts.join("."), finalValue);
+    }
 
-  await savePKB(productId, pkb);
+    conflict.resolution_status = "resolved";
+    conflict.resolved_at = new Date().toISOString();
+    conflict.resolution = resolution;
 
-  return { accepted: true };
+    if (pkb.gaps?.current) {
+      pkb.gaps.current = pkb.gaps.current.filter(
+        g => !g.gap_id.includes(conflictId)
+      );
+    }
+
+    decision = { accepted: true };
+  });
+
+  return decision;
 }
 
-export async function batchApplyUpdates(productId: string, updates: ProposedUpdate[], orgId?: number): Promise<PKCDecision[]> {
-  return Promise.all(updates.map(update => applyProposedUpdate(productId, update, orgId)));
-}

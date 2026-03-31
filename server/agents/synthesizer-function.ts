@@ -1,5 +1,5 @@
 import { callLLM, parseJSONResponse, buildOrgContext } from "./base-agent";
-import { loadOrgPKB, loadPKB, savePKB } from "../services/pkb-storage";
+import { loadOrgPKB, loadPKB, modifyPKB } from "../services/pkb-storage";
 import { formatPKBForContext } from "./product-explainer";
 import { db } from "../db";
 import { products } from "@shared/schema";
@@ -29,6 +29,9 @@ interface SynthesizerGapItem {
 
 interface LLMSynthesizerOutput {
   productBrief: string;
+  who_its_for: string | null;
+  why_it_wins: string | null;
+  key_message_pillars: string[];
   confidenceReasoning: string;
   personas: SynthesizerPersona[];
   suggestedQuestions: string[];
@@ -233,6 +236,9 @@ const SYNTHESIZER_SYSTEM_PROMPT = `You are a knowledge synthesis function for a 
 OUTPUT FORMAT (return exactly this structure):
 {
   "productBrief": "string — 3 paragraphs. Para 1: what the product is and who it is for. Para 2: how it works and key differentiators. Para 3: what is well documented in the knowledge base and what is still thin.",
+  "who_its_for": "string or null — 1-2 sentences describing the primary audience. Based on facts.target_users, facts.use_cases, and any B2C user_segments or B2B buyer_vs_user data. Example: 'Mobile-first music listeners aged 18-35, particularly students and Gen Z who want personalized music discovery without friction.' Return null if insufficient data.",
+  "why_it_wins": "string or null — 1-2 sentences on competitive positioning. Based on facts.differentiation, facts.features, and facts.value_proposition. Example: 'Spotify wins on personalization depth — its recommendation engine surfaces relevant music faster than Apple Music or YouTube Music, and its free tier creates a low-friction entry point.' Return null if insufficient data.",
+  "key_message_pillars": ["array of 3-5 short phrases capturing core messaging themes. Example: ['Personalized discovery', 'Zero-friction listening', 'Free-to-premium ladder', 'Multi-format audio']. Return empty array if insufficient data."],
   "confidenceReasoning": "string — one sentence explaining why the score is what it is. Name what is well captured and what is missing. Example: 'Core identity and pricing are well documented but competitive positioning and target user detail are thin.'",
   "personas": [
     {
@@ -293,12 +299,20 @@ export async function runSynthesizer(
   // ── Build user prompt ──────────────────────────────────────────────────────
   const orgContext = buildOrgContext(orgPKB);
   const formattedFacts = formatPKBForContext(pkb);
-  const existingGapPaths = (pkb.gaps?.current ?? [])
+  const currentGaps = pkb.gaps?.current ?? [];
+  const existingGapPaths = currentGaps
     .map(g => g.field_path)
     .join(", ");
+  const skippedPaths = currentGaps
+    .filter(g => g.do_not_ask)
+    .map(g => g.field_path);
   const existingPersonaNames = (pkb.personas ?? [])
     .map(p => `${p.name} (${p.type})`)
     .join(", ");
+
+  const skippedBlock = skippedPaths.length > 0
+    ? `\n## Skipped by user (do NOT generate gaps for these field paths)\n${skippedPaths.join(", ")}\n`
+    : "";
 
   const userPrompt = `Product: ${productName}
 Product type: ${productType.toUpperCase()}
@@ -311,7 +325,7 @@ ${formattedFacts || "No facts captured yet."}
 
 ## Previously identified gaps (field paths for continuity — re-evaluate based on current KB)
 ${existingGapPaths || "None yet."}
-
+${skippedBlock}
 ## Existing personas (for continuity)
 ${existingPersonaNames || "None yet."}
 
@@ -375,37 +389,58 @@ Synthesise the above into the required JSON format. The confidence score is ${co
     kbStage,
   };
 
-  // ── Write to PKB ───────────────────────────────────────────────────────────
-  const freshPkb = (await loadPKB(productId)) ?? pkb;
-
-  freshPkb.meta.product_brief = output.productBrief;
-  freshPkb.meta.kb_health_narrative = output.confidenceReasoning;
-  freshPkb.meta.kb_stage = output.kbStage;
-  freshPkb.meta.suggested_questions = output.suggestedQuestions;
-  freshPkb.meta.confidence_score = output.confidenceScore;
-
-  // derived_insights.product_brief — backward compat for explainer + CI chat
-  if (!freshPkb.derived_insights) freshPkb.derived_insights = {};
-  freshPkb.derived_insights.product_brief = {
-    simple_summary: output.productBrief,
-    who_its_for: undefined,
-    why_it_wins: undefined,
-    key_message_pillars: [],
-    sample_pitch: undefined,
-  };
-
-  // personas — full replacement
-  freshPkb.personas = personas.map((sp, i) => mapToPersona(sp, i));
-
-  // gaps.current — full replacement (critical first, then standard)
+  // ── Write to PKB (under lock — preserves concurrent writes) ─────────────
   const allGaps: Gap[] = [
     ...criticalGaps.map((g, i) => mapToGap(g, i, "critical")),
     ...standardGaps.map((g, i) => mapToGap(g, criticalGaps.length + i, "important")),
   ];
-  if (!freshPkb.gaps) freshPkb.gaps = { current: [], history: [] };
-  freshPkb.gaps.current = allGaps;
 
-  await savePKB(productId, freshPkb);
+  await modifyPKB(productId, (freshPkb) => {
+    freshPkb.meta.product_brief = output.productBrief;
+    freshPkb.meta.kb_health_narrative = output.confidenceReasoning;
+    freshPkb.meta.kb_stage = output.kbStage;
+    freshPkb.meta.suggested_questions = output.suggestedQuestions;
+    freshPkb.meta.confidence_score = output.confidenceScore;
+
+    // derived_insights.product_brief — backward compat for explainer + CI chat
+    if (!freshPkb.derived_insights) freshPkb.derived_insights = {};
+    freshPkb.derived_insights.product_brief = {
+      simple_summary: output.productBrief,
+      who_its_for: llmOutput.who_its_for || undefined,
+      why_it_wins: llmOutput.why_it_wins || undefined,
+      key_message_pillars: Array.isArray(llmOutput.key_message_pillars) ? llmOutput.key_message_pillars : [],
+      sample_pitch: undefined,
+    };
+
+    // personas — full replacement
+    freshPkb.personas = personas.map((sp, i) => mapToPersona(sp, i));
+
+    // gaps — archive old, replace current, carry forward do_not_ask
+    if (!freshPkb.gaps) freshPkb.gaps = { current: [], history: [] };
+    if (!freshPkb.gaps.history) freshPkb.gaps.history = [];
+
+    // Archive existing gaps before replacing
+    const oldGaps = freshPkb.gaps.current ?? [];
+    if (oldGaps.length > 0) {
+      freshPkb.gaps.history.push({ timestamp: new Date().toISOString(), gaps: oldGaps });
+      // Cap history at 50 entries
+      if (freshPkb.gaps.history.length > 50) {
+        freshPkb.gaps.history = freshPkb.gaps.history.slice(-50);
+      }
+    }
+
+    // Carry forward do_not_ask from old gaps by field_path
+    const doNotAskPaths = new Set(
+      oldGaps.filter(g => g.do_not_ask).map(g => g.field_path),
+    );
+    for (const gap of allGaps) {
+      if (doNotAskPaths.has(gap.field_path)) {
+        gap.do_not_ask = true;
+      }
+    }
+
+    freshPkb.gaps.current = allGaps;
+  });
 
   // ── Write to DB ────────────────────────────────────────────────────────────
   try {

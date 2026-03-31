@@ -4,6 +4,50 @@ import { supabase, PKB_BUCKET } from "../supabase-storage";
 const MAX_SNAPSHOTS = 25;
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Per-product async mutex — prevents concurrent read-modify-write races
+// ──────────────────────────────────────────────────────────────────────────────
+
+const locks = new Map<string, Promise<void>>();
+
+/**
+ * Serialises async work per productId. If another call for the same product is
+ * in-flight, this one waits until it finishes before starting.
+ */
+export async function withPKBLock<T>(productId: string, fn: () => Promise<T>): Promise<T> {
+  // Wait for any existing lock to resolve
+  const existing = locks.get(productId);
+  let release: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  locks.set(productId, existing ? existing.then(() => gate) : gate);
+  if (existing) await existing;
+  try {
+    return await fn();
+  } finally {
+    release!();
+    // Clean up only if we're still the tail of the chain
+    if (locks.get(productId) === gate) locks.delete(productId);
+  }
+}
+
+/**
+ * Safe read-modify-write for a product PKB.
+ * Acquires the per-product lock, loads the PKB, runs the mutator in-place,
+ * then saves. Returns the saved PKB.
+ */
+export async function modifyPKB(
+  productId: string,
+  mutator: (pkb: PKB) => void | Promise<void>,
+): Promise<PKB> {
+  return withPKBLock(productId, async () => {
+    let pkb = await loadPKB(productId);
+    if (!pkb) pkb = await initializePKB(productId, "b2b");
+    await mutator(pkb);
+    await savePKB(productId, pkb);
+    return pkb;
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Supabase helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -14,20 +58,35 @@ async function uploadJSON(storagePath: string, data: unknown): Promise<void> {
     .upload(storagePath, content, {
       contentType: "application/json",
       upsert: true,
+      cacheControl: "0",
     });
   if (error) throw new Error(`Failed to upload ${storagePath}: ${error.message}`);
 }
 
 async function downloadJSON<T>(storagePath: string): Promise<T | null> {
-  const { data, error } = await supabase.storage.from(PKB_BUCKET).download(storagePath);
-  if (error) {
-    const msg = (error as any).message ?? "";
-    if (msg.includes("Object not found") || (error as any).statusCode === 404 || (error as any).error === "Not Found") {
+  // Use createSignedUrl with a short expiry to bypass CDN caching
+  const { data: signedData, error: signedError } = await supabase.storage
+    .from(PKB_BUCKET)
+    .createSignedUrl(storagePath, 60); // 60s expiry
+
+  if (signedError) {
+    const msg = (signedError as any).message ?? "";
+    if (msg.includes("Object not found") || (signedError as any).statusCode === 404 || (signedError as any).error === "Not Found") {
       return null;
     }
-    throw new Error(`Failed to download ${storagePath}: ${msg}`);
+    throw new Error(`Failed to create signed URL for ${storagePath}: ${msg}`);
   }
-  const text = await data.text();
+
+  const response = await fetch(signedData.signedUrl, {
+    headers: { "Cache-Control": "no-cache, no-store" },
+  });
+
+  if (!response.ok) {
+    if (response.status === 404 || response.status === 400) return null;
+    throw new Error(`Failed to download ${storagePath}: HTTP ${response.status}`);
+  }
+
+  const text = await response.text();
   return JSON.parse(text) as T;
 }
 
@@ -103,8 +162,9 @@ export async function loadPKB(productId: string): Promise<PKB | null> {
 
 export async function savePKB(productId: string, pkb: PKB): Promise<void> {
   pkb.meta.last_updated = new Date().toISOString();
-  await createSnapshot(productId, pkb);
+  // Upload main file FIRST, then snapshot — avoids snapshot cleanup interfering with main upload
   await uploadJSON(`product_${productId}/pkb.json`, pkb);
+  await createSnapshot(productId, pkb);
 }
 
 export async function deletePKB(productId: string): Promise<void> {
@@ -158,65 +218,59 @@ export async function addDocumentInput(
   type: string,
   sizeBytes?: number
 ): Promise<void> {
-  let pkb = await loadPKB(productId);
-  if (!pkb) pkb = await initializePKB(productId, "b2b");
-  if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
-  if (!pkb.meta.inputs.documents) pkb.meta.inputs.documents = [];
-  pkb.meta.inputs.documents.push({
-    filename,
-    type,
-    uploaded_at: new Date().toISOString(),
-    size_bytes: sizeBytes,
+  await modifyPKB(productId, (pkb) => {
+    if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+    if (!pkb.meta.inputs.documents) pkb.meta.inputs.documents = [];
+    pkb.meta.inputs.documents.push({
+      filename,
+      type,
+      uploaded_at: new Date().toISOString(),
+      size_bytes: sizeBytes,
+    });
   });
-  await savePKB(productId, pkb);
 }
 
 export async function addUrlInput(productId: string, url: string, title?: string): Promise<void> {
-  let pkb = await loadPKB(productId);
-  if (!pkb) pkb = await initializePKB(productId, "b2b");
-  if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
-  if (!pkb.meta.inputs.urls) pkb.meta.inputs.urls = [];
-  const existingUrl = pkb.meta.inputs.urls.find((u) => u.url === url);
-  if (!existingUrl) {
-    pkb.meta.inputs.urls.push({ url, fetched_at: new Date().toISOString(), title });
-    await savePKB(productId, pkb);
-  }
+  await modifyPKB(productId, (pkb) => {
+    if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+    if (!pkb.meta.inputs.urls) pkb.meta.inputs.urls = [];
+    const existingUrl = pkb.meta.inputs.urls.find((u) => u.url === url);
+    if (!existingUrl) {
+      pkb.meta.inputs.urls.push({ url, fetched_at: new Date().toISOString(), title });
+    }
+  });
 }
 
 export async function addMultipleUrlInputs(
   productId: string,
   urls: Array<{ url: string; title?: string }>
 ): Promise<void> {
-  let pkb = await loadPKB(productId);
-  if (!pkb) pkb = await initializePKB(productId, "b2b");
-  if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
-  if (!pkb.meta.inputs.urls) pkb.meta.inputs.urls = [];
-  const existingUrls = new Set(pkb.meta.inputs.urls.map((u) => u.url));
-  let changed = false;
-  for (const { url, title } of urls) {
-    if (!existingUrls.has(url)) {
-      pkb.meta.inputs.urls.push({ url, fetched_at: new Date().toISOString(), title });
-      existingUrls.add(url);
-      changed = true;
+  await modifyPKB(productId, (pkb) => {
+    if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+    if (!pkb.meta.inputs.urls) pkb.meta.inputs.urls = [];
+    const existingUrls = new Set(pkb.meta.inputs.urls.map((u) => u.url));
+    for (const { url, title } of urls) {
+      if (!existingUrls.has(url)) {
+        pkb.meta.inputs.urls.push({ url, fetched_at: new Date().toISOString(), title });
+        existingUrls.add(url);
+      }
     }
-  }
-  if (changed) await savePKB(productId, pkb);
+  });
 }
 
 export async function addFounderSession(productId: string, founderSessionId: string): Promise<void> {
-  const pkb = await loadPKB(productId);
-  if (!pkb) return;
-  if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
-  if (!pkb.meta.inputs.founder_sessions) pkb.meta.inputs.founder_sessions = [];
-  const alreadyTracked = pkb.meta.inputs.founder_sessions.some(
-    (s) => s.session_id === founderSessionId
-  );
-  if (alreadyTracked) return;
-  pkb.meta.inputs.founder_sessions.push({
-    session_id: founderSessionId,
-    started_at: new Date().toISOString(),
+  await modifyPKB(productId, (pkb) => {
+    if (!pkb.meta.inputs) pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+    if (!pkb.meta.inputs.founder_sessions) pkb.meta.inputs.founder_sessions = [];
+    const alreadyTracked = pkb.meta.inputs.founder_sessions.some(
+      (s) => s.session_id === founderSessionId
+    );
+    if (alreadyTracked) return;
+    pkb.meta.inputs.founder_sessions.push({
+      session_id: founderSessionId,
+      started_at: new Date().toISOString(),
+    });
   });
-  await savePKB(productId, pkb);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

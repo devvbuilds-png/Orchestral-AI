@@ -1,6 +1,6 @@
-import { callLLM, streamLLM, parseJSONResponse, loadCombinedContext, buildOrgContext, buildAgentContext, computeLearnerMode, type AgentContext, type KBHealth, type SessionContext, type LearnerMode } from "./base-agent";
+import { callLLM, streamLLM, parseJSONResponse, loadCombinedContext, buildOrgContext, buildAgentContext, computeLearnerMode, type AgentContext, type KBHealth, type SessionContext, type LearnerMode, type ChatHistoryMessage } from "./base-agent";
 import type { ProposedUpdate, Source, PKB } from "@shared/schema";
-import { loadOrgPKB, savePKB } from "../services/pkb-storage";
+import { loadOrgPKB, modifyPKB } from "../services/pkb-storage";
 
 // ---------------------------------------------------------------------------
 // Mode-specific behavioural instructions
@@ -169,8 +169,17 @@ The B2B/B2C/Hybrid classification is already set. Never ask about it or mention 
 If the founder declines to share something: acknowledge politely, mark as declined in extracted_facts (value: "DECLINED", declined: true), and never ask about it again.
 
 **Extraction**
-When the founder provides new information, extract facts for:
-facts.product_identity.*, facts.value_proposition.*, facts.target_users.*, facts.use_cases, facts.features, facts.pricing.*, facts.differentiation.*, facts.proof_assets.*, extensions.b2b.* (B2B/hybrid), extensions.b2c.* (B2C/hybrid)
+When the founder provides new information, extract facts using these exact field paths:
+- facts.product_identity.name, facts.product_identity.one_liner, facts.product_identity.category, facts.product_identity.website
+- facts.value_proposition.primary_problem, facts.value_proposition.top_benefits, facts.value_proposition.why_now
+- facts.target_users.primary_users, facts.target_users.secondary_users, facts.target_users.not_for
+- facts.use_cases (array — each item: { name, outcome })
+- facts.features (array — each item: { name, what_it_does })
+- facts.pricing.model, facts.pricing.range_notes, facts.pricing.currency
+- facts.differentiation.alternatives, facts.differentiation.why_we_win, facts.differentiation.where_we_lose
+- facts.proof_assets.testimonials, facts.proof_assets.case_studies, facts.proof_assets.metrics
+- extensions.b2b.buyer_vs_user.buyers, extensions.b2b.buyer_vs_user.end_users, extensions.b2b.org_fit.industries, extensions.b2b.org_fit.company_size, extensions.b2b.procurement.sales_cycle, extensions.b2b.implementation.integrations (B2B/hybrid only)
+- extensions.b2c.user_segments, extensions.b2c.monetization.model, extensions.b2c.retention_habits.triggers, extensions.b2c.retention_habits.loops (B2C/hybrid only)
 
 ## OUTPUT FORMAT
 Always return valid JSON exactly matching this structure:
@@ -244,6 +253,7 @@ interface InterviewerResult {
 export async function processFounderResponse(
   context: AgentContext,
   founderMessage: string,
+  conversationHistory: ChatHistoryMessage[] = [],
 ): Promise<{ response: string; updates: ProposedUpdate[]; declinedFields?: string[] }> {
   const { orgPKB, productPKB: pkb } = await loadCombinedContext(context);
   const enrichedContext = buildAgentContext(context, pkb, orgPKB);
@@ -270,6 +280,7 @@ export async function processFounderResponse(
   const response = await callLLM(systemPrompt, founderMessage, {
     responseFormat: "json",
     maxTokens: 2048,
+    conversationHistory,
   });
 
   const result = parseJSONResponse<InterviewerResult>(response);
@@ -314,14 +325,15 @@ export async function processFounderResponse(
     });
   }
 
-  if (declinedFields.length > 0 && pkb) {
-    const existingDeclined: string[] = (pkb.meta?.inputs as any)?.declined_fields || [];
-    const allDeclined = Array.from(new Set([...existingDeclined, ...declinedFields]));
-    if (!pkb.meta.inputs) {
-      pkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
-    }
-    (pkb.meta.inputs as any).declined_fields = allDeclined;
-    await savePKB(context.productId, pkb);
+  if (declinedFields.length > 0) {
+    await modifyPKB(context.productId, (freshPkb) => {
+      const existingDeclined: string[] = (freshPkb.meta?.inputs as any)?.declined_fields || [];
+      const allDeclined = Array.from(new Set([...existingDeclined, ...declinedFields]));
+      if (!freshPkb.meta.inputs) {
+        freshPkb.meta.inputs = { documents: [], urls: [], founder_sessions: [] };
+      }
+      (freshPkb.meta.inputs as any).declined_fields = allDeclined;
+    });
   }
 
   let finalResponse = result.response;

@@ -1,4 +1,4 @@
-import { callLLM, streamLLM, loadCombinedContext, buildOrgContext, buildAgentContext, type AgentContext } from "./base-agent";
+import { callLLM, streamLLM, loadCombinedContext, buildOrgContext, buildAgentContext, type AgentContext, type ChatHistoryMessage } from "./base-agent";
 import type { PKB, OrgPKB } from "@shared/schema";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -194,6 +194,7 @@ export async function* streamExplainProduct(
   context: AgentContext,
   question: string,
   explainerCtx?: ExplainerContext,
+  conversationHistory: ChatHistoryMessage[] = [],
 ): AsyncGenerator<string> {
   const { orgPKB, productPKB: pkb } = await loadCombinedContext(context);
   const enrichedContext = buildAgentContext(context, pkb, orgPKB);
@@ -212,7 +213,7 @@ export async function* streamExplainProduct(
     orgContext,
   });
 
-  for await (const chunk of streamLLM(systemPrompt, question, { maxTokens: 2048 })) {
+  for await (const chunk of streamLLM(systemPrompt, question, { maxTokens: 2048, conversationHistory })) {
     yield chunk;
   }
 }
@@ -225,6 +226,7 @@ export async function explainProduct(
   context: AgentContext,
   question: string,
   explainerCtx?: ExplainerContext,
+  conversationHistory: ChatHistoryMessage[] = [],
 ): Promise<string> {
   const { orgPKB, productPKB: pkb } = await loadCombinedContext(context);
   const enrichedContext = buildAgentContext(context, pkb, orgPKB);
@@ -243,7 +245,7 @@ export async function explainProduct(
     orgContext,
   });
 
-  return callLLM(systemPrompt, question, { maxTokens: 2048 });
+  return callLLM(systemPrompt, question, { maxTokens: 2048, conversationHistory });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -256,6 +258,7 @@ export async function explainCIChat(
   message: string,
   surface: "dashboard_chat" | "app_guide",
   allProductSummaries?: ProductSummary[],
+  conversationHistory: ChatHistoryMessage[] = [],
 ): Promise<string> {
   const orgContext = buildOrgContext(orgPKB);
 
@@ -271,7 +274,7 @@ export async function explainCIChat(
     allProductSummaries,
   });
 
-  return callLLM(systemPrompt, message, { maxTokens: 1024 });
+  return callLLM(systemPrompt, message, { maxTokens: 1024, conversationHistory });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -281,6 +284,7 @@ export async function explainCIChat(
 export function formatPKBForContext(pkb: PKB): string {
   const sections: string[] = [];
 
+  // Product overview from meta
   if (pkb.meta) {
     sections.push(`## Product Overview
 - Name: ${pkb.meta.product_name || "Unknown"}
@@ -288,104 +292,173 @@ export function formatPKBForContext(pkb: PKB): string {
 ${pkb.meta.primary_mode ? `- Primary Focus: ${pkb.meta.primary_mode.toUpperCase()}` : ""}`);
   }
 
-  if (pkb.facts?.product_identity) {
-    const pi = pkb.facts.product_identity;
-    sections.push(`## Product Identity
-- Name: ${extractValue(pi.name)}
-- One-liner: ${extractValue(pi.one_liner)}
-- Category: ${extractValue(pi.category)}
-- Website: ${extractValue(pi.website)}`);
+  // Dynamically walk pkb.facts
+  if (pkb.facts && typeof pkb.facts === "object") {
+    const knownSections: Record<string, string> = {
+      product_identity: "Product Identity",
+      value_proposition: "Value Proposition",
+      target_users: "Target Users",
+      use_cases: "Use Cases",
+      features: "Features",
+      pricing: "Pricing",
+      differentiation: "Differentiation",
+      proof_assets: "Proof & Social Proof",
+      constraints_assumptions: "Constraints & Assumptions",
+    };
+    const renderedKeys = new Set<string>();
+
+    for (const [key, heading] of Object.entries(knownSections)) {
+      const section = (pkb.facts as any)[key];
+      if (!section) continue;
+      renderedKeys.add(key);
+      const rendered = renderNode(section, key);
+      if (rendered) sections.push(`## ${heading}\n${rendered}`);
+    }
+
+    // Render any extra sections not in the known list
+    for (const key of Object.keys(pkb.facts as any)) {
+      if (renderedKeys.has(key)) continue;
+      const section = (pkb.facts as any)[key];
+      if (!section) continue;
+      const rendered = renderNode(section, key);
+      if (rendered) sections.push(`## ${formatLabel(key)}\n${rendered}`);
+    }
   }
 
-  if (pkb.facts?.value_proposition) {
-    const vp = pkb.facts.value_proposition;
-    sections.push(`## Value Proposition
-- Primary Problem: ${extractValue(vp.primary_problem)}
-- Top Benefits: ${extractValue(vp.top_benefits)}
-- Why Now: ${extractValue(vp.why_now)}`);
+  // Dynamically walk extensions
+  if (pkb.extensions?.b2b && hasContent(pkb.extensions.b2b)) {
+    const rendered = renderNode(pkb.extensions.b2b, "b2b");
+    if (rendered) sections.push(`## B2B Details\n${rendered}`);
+  }
+  if (pkb.extensions?.b2c && hasContent(pkb.extensions.b2c)) {
+    const rendered = renderNode(pkb.extensions.b2c, "b2c");
+    if (rendered) sections.push(`## B2C Details\n${rendered}`);
   }
 
-  if (pkb.facts?.target_users) {
-    const tu = pkb.facts.target_users;
-    sections.push(`## Target Users
-- Primary Users: ${extractValue(tu.primary_users)}
-- Secondary Users: ${extractValue(tu.secondary_users)}
-- Not For: ${extractValue(tu.not_for)}`);
-  }
-
-  if (pkb.facts?.use_cases && Array.isArray(pkb.facts.use_cases) && pkb.facts.use_cases.length > 0) {
-    const useCases = pkb.facts.use_cases.map((uc, i) =>
-      `${i + 1}. ${extractValue(uc.name)}: ${extractValue(uc.outcome)}`
-    ).join("\n");
-    sections.push(`## Use Cases\n${useCases}`);
-  }
-
-  if (pkb.facts?.features && Array.isArray(pkb.facts.features) && pkb.facts.features.length > 0) {
-    const features = pkb.facts.features.map((f, i) =>
-      `${i + 1}. ${extractValue(f.name)}: ${extractValue(f.what_it_does)}`
-    ).join("\n");
-    sections.push(`## Features\n${features}`);
-  }
-
-  if (pkb.facts?.pricing) {
-    const p = pkb.facts.pricing;
-    sections.push(`## Pricing
-- Model: ${extractValue(p.model)}
-- Range: ${extractValue(p.range_notes)}
-- Currency: ${extractValue(p.currency)}`);
-  }
-
-  if (pkb.facts?.differentiation) {
-    const d = pkb.facts.differentiation;
-    sections.push(`## Differentiation
-- Alternatives: ${extractValue(d.alternatives)}
-- Why We Win: ${extractValue(d.why_we_win)}
-- Where We Lose: ${extractValue(d.where_we_lose)}`);
-  }
-
+  // Derived insights
   if (pkb.derived_insights?.product_brief) {
     const brief = pkb.derived_insights.product_brief;
-    sections.push(`## Synthesized Insights
-- Summary: ${brief.simple_summary || "Not available"}
-- Who It's For: ${brief.who_its_for || "Not available"}
-- Why It Wins: ${brief.why_it_wins || "Not available"}
-- Key Messages: ${brief.key_message_pillars?.join(", ") || "Not available"}`);
-  }
-
-  if (pkb.extensions?.b2b && Object.keys(pkb.extensions.b2b).length > 0) {
-    const b2b = pkb.extensions.b2b;
-    sections.push(`## B2B Details
-- Buyers: ${extractValue(b2b.buyer_vs_user?.buyers)}
-- End Users: ${extractValue(b2b.buyer_vs_user?.end_users)}
-- Industries: ${extractValue(b2b.org_fit?.industries)}
-- Company Size: ${extractValue(b2b.org_fit?.company_size)}
-- Sales Cycle: ${extractValue(b2b.procurement?.sales_cycle)}
-- Integrations: ${extractValue(b2b.implementation?.integrations)}`);
-  }
-
-  if (pkb.extensions?.b2c && Object.keys(pkb.extensions.b2c).length > 0) {
-    const b2c = pkb.extensions.b2c;
-    const segments = b2c.user_segments?.map(s => extractValue(s.segment_name)).join(", ");
-    sections.push(`## B2C Details
-- User Segments: ${segments || "Not available"}
-- Monetization: ${extractValue(b2c.monetization?.model)}
-- Retention Triggers: ${extractValue(b2c.retention_habits?.triggers)}`);
+    const lines: string[] = [];
+    if (brief.simple_summary) lines.push(`- Summary: ${brief.simple_summary}`);
+    if (brief.who_its_for) lines.push(`- Who It's For: ${brief.who_its_for}`);
+    if (brief.why_it_wins) lines.push(`- Why It Wins: ${brief.why_it_wins}`);
+    if (Array.isArray(brief.key_message_pillars) && brief.key_message_pillars.length > 0) {
+      lines.push(`- Key Messages: ${brief.key_message_pillars.join(", ")}`);
+    }
+    if (lines.length > 0) sections.push(`## Synthesized Insights\n${lines.join("\n")}`);
   }
 
   return sections.join("\n\n");
 }
 
-function extractValue(field: any): string {
-  if (!field) return "Not available";
-  if (typeof field === "string") return field;
-  if (field.value !== undefined) {
-    if (Array.isArray(field.value)) {
-      return field.value.join(", ");
+// ── Dynamic PKB rendering helpers ──────────────────────────────────────────
+
+/** Check if an object has any real content (not just empty sub-objects) */
+function hasContent(obj: any): boolean {
+  if (!obj || typeof obj !== "object") return false;
+  for (const val of Object.values(obj)) {
+    if (val === null || val === undefined) continue;
+    if (typeof val === "string" && val.length > 0) return true;
+    if (typeof val === "number" || typeof val === "boolean") return true;
+    if (Array.isArray(val) && val.length > 0) return true;
+    if (typeof val === "object") {
+      if ("value" in val && val.value !== null && val.value !== undefined && val.value !== "") return true;
+      if (hasContent(val)) return true;
     }
-    return String(field.value);
   }
+  return false;
+}
+
+/** Convert snake_case key to a readable label */
+function formatLabel(key: string): string {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Extract the display value from a FactField, primitive, or nested object */
+function extractValue(field: any): string | null {
+  if (field === null || field === undefined) return null;
+  if (typeof field === "string") return field.length > 0 ? field : null;
+  if (typeof field === "number" || typeof field === "boolean") return String(field);
   if (Array.isArray(field)) {
-    return field.join(", ");
+    const items = field.map((item) => extractValue(item)).filter(Boolean);
+    return items.length > 0 ? items.join(", ") : null;
   }
-  return JSON.stringify(field);
+  // FactField wrapper: { value, sources, ... }
+  if ("value" in field && field.value !== undefined && field.value !== null) {
+    return extractValue(field.value);
+  }
+  return null;
+}
+
+/**
+ * Recursively render a PKB node into human-readable lines.
+ * Handles: FactField wrappers, plain objects, arrays, primitives.
+ */
+function renderNode(node: any, _parentKey: string, depth: number = 0): string {
+  if (node === null || node === undefined) return "";
+  const indent = "  ".repeat(depth);
+
+  // Primitive
+  if (typeof node === "string" || typeof node === "number" || typeof node === "boolean") {
+    return String(node);
+  }
+
+  // Array — render each item
+  if (Array.isArray(node)) {
+    const items: string[] = [];
+    for (let i = 0; i < node.length; i++) {
+      const item = node[i];
+      const val = extractValue(item);
+      if (val) {
+        items.push(`${indent}${i + 1}. ${val}`);
+      } else if (typeof item === "object" && item !== null) {
+        // Complex array item — render its fields
+        const subLines = renderObjectFields(item, depth + 1);
+        if (subLines) items.push(`${indent}${i + 1}.\n${subLines}`);
+      }
+    }
+    return items.join("\n");
+  }
+
+  // FactField wrapper — extract and return value
+  if (typeof node === "object" && "value" in node && node.value !== undefined) {
+    const val = extractValue(node);
+    return val || "";
+  }
+
+  // Plain object — render each key
+  return renderObjectFields(node, depth);
+}
+
+/** Render the fields of a plain object, skipping metadata keys */
+function renderObjectFields(obj: any, depth: number): string {
+  if (!obj || typeof obj !== "object") return "";
+  const indent = "  ".repeat(depth);
+  const lines: string[] = [];
+  const skipKeys = new Set(["sources", "source_type", "source_ref", "captured_at", "evidence",
+    "quality_tag", "lifecycle_status", "sensitive", "approved", "locked",
+    "do_not_ask", "last_verified", "audit_trail"]);
+
+  for (const [key, val] of Object.entries(obj)) {
+    if (skipKeys.has(key)) continue;
+    if (val === null || val === undefined) continue;
+
+    // Try to extract a simple value first
+    const simple = extractValue(val);
+    if (simple) {
+      lines.push(`${indent}- ${formatLabel(key)}: ${simple}`);
+      continue;
+    }
+
+    // Nested object or array with content — recurse
+    if (typeof val === "object") {
+      const nested = renderNode(val, key, depth + 1);
+      if (nested) {
+        lines.push(`${indent}- ${formatLabel(key)}:\n${nested}`);
+      }
+    }
+  }
+  return lines.join("\n");
 }
