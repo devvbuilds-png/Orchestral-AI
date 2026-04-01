@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Plus, Zap, ArrowRight, ChevronDown, Bell } from "lucide-react";
 import KaizenMark from "@/components/KaizenMark";
 import ReactMarkdown from "react-markdown";
@@ -13,6 +13,7 @@ import MinimalModeToggle from "@/components/MinimalModeToggle";
 import { useMinimalMode } from "@/contexts/MinimalModeContext";
 import ReviewQueuePanel from "@/components/review-inbox";
 import AddProductModal from "@/components/AddProductModal";
+import OrgSetup from "@/pages/OrgSetup";
 import { apiRequest } from "@/lib/queryClient";
 import type { Product, Organisation } from "@shared/schema";
 
@@ -21,14 +22,44 @@ function scrollToProducts() {
   document.getElementById("products-section")?.scrollIntoView({ behavior: "smooth" });
 }
 
+function animateWindowScroll(targetY: number, durationMs: number) {
+  const startY = window.scrollY;
+  const delta = targetY - startY;
+
+  if (Math.abs(delta) < 4) return Promise.resolve();
+
+  return new Promise<void>((resolve) => {
+    const startTime = window.performance.now();
+
+    const tick = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / durationMs, 1);
+      const eased = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+      window.scrollTo({ top: startY + delta * eased, behavior: "auto" });
+
+      if (progress < 1) {
+        window.requestAnimationFrame(tick);
+      } else {
+        resolve();
+      }
+    };
+
+    window.requestAnimationFrame(tick);
+  });
+}
+
 const Dashboard = () => {
   const { minimal } = useMinimalMode();
-  const queryClient = useQueryClient();
   const [chatQuery, setChatQuery] = useState("");
   const [chatResponse, setChatResponse] = useState("");
   const [ciMode, setCiMode] = useState<"guide" | "knowledge">("guide");
   const [orgReviewOpen, setOrgReviewOpen] = useState(false);
   const [addProductOpen, setAddProductOpen] = useState(false);
+  const [editOrgOpen, setEditOrgOpen] = useState(false);
+  const autoScrollPlayedRef = useRef(false);
 
   const { data: authData } = useQuery<{ user: { id: string } } | null>({
     queryKey: ["/api/auth/me"],
@@ -75,6 +106,60 @@ const Dashboard = () => {
   });
 
   const pendingConflicts = inboxData?.conflicts ?? [];
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (minimal) return;
+    if (autoScrollPlayedRef.current) return;
+    if (window.scrollY > 24) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const hasPlayedInSession = window.sessionStorage.getItem("dashboard-scroll-hint-played");
+    if (hasPlayedInSession) return;
+
+    autoScrollPlayedRef.current = true;
+    let cancelled = false;
+
+    const cancelAnimation = () => {
+      cancelled = true;
+    };
+
+    const timeoutId = window.setTimeout(async () => {
+      if (cancelled) return;
+
+      const productsSection = document.getElementById("products-section");
+      if (!productsSection) return;
+
+      const sectionTop = productsSection.getBoundingClientRect().top + window.scrollY;
+      const peekTarget = Math.max(0, sectionTop - Math.max(window.innerHeight * 0.32, 220));
+
+      if (peekTarget <= 32) return;
+
+      try {
+        await animateWindowScroll(peekTarget, 1100);
+        if (cancelled) return;
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 450));
+        if (cancelled) return;
+        await animateWindowScroll(0, 1200);
+        if (!cancelled) {
+          window.sessionStorage.setItem("dashboard-scroll-hint-played", "true");
+        }
+      } catch {
+        // Ignore interrupted hint animation.
+      }
+    }, 1300);
+
+    window.addEventListener("wheel", cancelAnimation, { passive: true });
+    window.addEventListener("touchstart", cancelAnimation, { passive: true });
+    window.addEventListener("keydown", cancelAnimation);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.removeEventListener("wheel", cancelAnimation);
+      window.removeEventListener("touchstart", cancelAnimation);
+      window.removeEventListener("keydown", cancelAnimation);
+    };
+  }, [minimal]);
 
   const chatMutation = useMutation({
     mutationFn: async (query: string) => {
@@ -237,10 +322,12 @@ const Dashboard = () => {
           animate={{ opacity: 1 }}
           transition={{ delay: 1 }}
           onClick={scrollToProducts}
-          className="absolute bottom-10 flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          className="absolute bottom-8 flex flex-col items-center gap-2 cursor-pointer transition-transform hover:-translate-y-0.5"
         >
-          <span className="text-[10px] font-medium uppercase tracking-[0.2em]">Scroll</span>
-          <ChevronDown className="h-4 w-4 animate-bounce" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.28em] text-primary">
+            Scroll
+          </span>
+          <ChevronDown className="h-5 w-5 animate-bounce text-primary" />
         </motion.button>
       </section>
 
@@ -251,6 +338,13 @@ const Dashboard = () => {
           <div className="max-w-6xl mx-auto flex items-center justify-between py-4 px-2">
             <span className="font-heading text-base font-bold text-foreground tracking-tight">{orgName}</span>
             <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setEditOrgOpen(true)}
+                className="rounded-xl font-semibold text-sm h-9 px-4 border-border bg-secondary/60 hover:bg-secondary"
+              >
+                Edit organisation
+              </Button>
               {/* Org-level bell icon */}
               <button
                 onClick={() => setOrgReviewOpen(true)}
@@ -337,6 +431,14 @@ const Dashboard = () => {
         onClose={() => setAddProductOpen(false)}
         orgId={orgId}
       />
+      {editOrgOpen && org && (
+        <OrgSetup
+          mode="edit"
+          initialOrganisation={org}
+          onCancel={() => setEditOrgOpen(false)}
+          onComplete={() => setEditOrgOpen(false)}
+        />
+      )}
     </div>
   );
 };

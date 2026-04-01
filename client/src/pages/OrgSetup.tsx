@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import KaizenMark from "@/components/KaizenMark";
@@ -7,18 +7,28 @@ import { Input } from "@/components/ui/input";
 import { useMinimalMode } from "@/contexts/MinimalModeContext";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import type { Organisation } from "@shared/schema";
 
 interface OrgSetupProps {
   onComplete: () => void;
+  mode?: "create" | "edit";
+  initialOrganisation?: Organisation | null;
+  onCancel?: () => void;
 }
 
 const locations = ["India", "Southeast Asia", "Europe", "North America", "Latin America", "Middle East", "Africa", "Global"];
 const businessModels = ["B2B", "B2C", "Both"];
 
-const OrgSetup = ({ onComplete }: OrgSetupProps) => {
+const OrgSetup = ({
+  onComplete,
+  mode = "create",
+  initialOrganisation = null,
+  onCancel,
+}: OrgSetupProps) => {
   const { minimal } = useMinimalMode();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isEditMode = mode === "edit";
 
   const [orgName, setOrgName] = useState("");
   const [description, setDescription] = useState("");
@@ -31,6 +41,20 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
   const [businessModel, setBusinessModel] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [whyOpen, setWhyOpen] = useState(false);
+
+  useEffect(() => {
+    if (!initialOrganisation) return;
+
+    setOrgName(initialOrganisation.name ?? "");
+    setDescription(initialOrganisation.description ?? "");
+    setIndustry(initialOrganisation.industry ?? "");
+    setFounded(initialOrganisation.founded_year ? String(initialOrganisation.founded_year) : "");
+    setNumProducts(initialOrganisation.num_products ? String(initialOrganisation.num_products) : "");
+    setSelectedLocations(initialOrganisation.locations ?? []);
+    setCompetitors(initialOrganisation.competitors ?? []);
+    setBusinessModel(initialOrganisation.business_model ? initialOrganisation.business_model.toUpperCase() : "");
+    setWebsiteUrl(initialOrganisation.website_url ?? "");
+  }, [initialOrganisation]);
 
   const toggleLocation = (loc: string) => {
     setSelectedLocations(prev =>
@@ -46,9 +70,9 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
     }
   };
 
-  const createOrgMutation = useMutation({
+  const saveOrgMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest("POST", "/api/organisations", {
+      const payload = {
         name: orgName.trim(),
         description: description.trim() || undefined,
         industry: industry.trim() || undefined,
@@ -58,7 +82,13 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
         competitors: competitors.length > 0 ? competitors : undefined,
         business_model: businessModel ? businessModel.toLowerCase() : undefined,
         website_url: websiteUrl.trim() || undefined,
-      });
+      };
+
+      if (isEditMode && initialOrganisation?.id) {
+        return apiRequest("PATCH", `/api/organisations/${initialOrganisation.id}`, payload);
+      }
+
+      return apiRequest("POST", "/api/organisations", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/organisations"] });
@@ -69,7 +99,7 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!orgName.trim()) return;
-    createOrgMutation.mutate();
+    saveOrgMutation.mutate();
   };
 
   const uploadExtractMutation = useMutation({
@@ -89,12 +119,13 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
       className="fixed inset-0 z-50 flex flex-col items-center outer-frame overflow-auto"
     >
       <div className="relative z-10 w-full max-w-2xl mx-auto px-6 py-16">
-        {/* Progress Bar */}
-        <div className="flex justify-center gap-2 mb-8">
-          <div className="h-1 w-16 rounded-full bg-primary" />
-          <div className="h-1 w-16 rounded-full bg-primary" />
-          <div className="h-1 w-16 rounded-full bg-muted" />
-        </div>
+        {!isEditMode && (
+          <div className="flex justify-center gap-2 mb-8">
+            <div className="h-1 w-16 rounded-full bg-primary" />
+            <div className="h-1 w-16 rounded-full bg-primary" />
+            <div className="h-1 w-16 rounded-full bg-muted" />
+          </div>
+        )}
 
         {/* Step Badge */}
         <motion.div
@@ -104,7 +135,7 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
           className="flex justify-center mb-6"
         >
           <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-            Step 2 of 3 — Workspace setup
+            {isEditMode ? "Organisation settings" : "Step 2 of 3 — Workspace setup"}
           </span>
         </motion.div>
 
@@ -114,10 +145,12 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
           transition={{ delay: 0.25 }}
         >
           <h1 className="font-heading text-3xl font-bold text-foreground mb-3">
-            Set up your organisation
+            {isEditMode ? "Edit organisation details" : "Set up your organisation"}
           </h1>
           <p className="font-body text-sm text-muted-foreground mb-8 leading-relaxed">
-            This is the home for all your products inside Kaizen. Think of it as the container — your org name, industry, and size help us tailor the experience for your team.
+            {isEditMode
+              ? "Update the core organisation details that shape your dashboard and company-level knowledge context."
+              : "This is the home for all your products inside Kaizen. Think of it as the container — your org name, industry, and size help us tailor the experience for your team."}
           </p>
         </motion.div>
 
@@ -156,6 +189,20 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
           onSubmit={handleSubmit}
           className="space-y-6"
         >
+          {/* Upload card */}
+          <div className="surface-card rounded-xl p-5">
+            <h4 className="font-heading text-sm font-bold text-foreground mb-1">
+              Upload a company deck to auto-fill this form
+            </h4>
+            <p className="font-body text-xs text-muted-foreground mb-4 leading-relaxed">
+              Only organisation-level fields will be extracted — everything else is ignored. Fields not found will be left blank for you to fill manually.
+            </p>
+            <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt,.md" className="hidden" onChange={() => {}} />
+            <Button type="button" variant="outline" className="rounded-xl text-xs" onClick={() => fileInputRef.current?.click()}>
+              Browse file
+            </Button>
+          </div>
+
           {/* Org Name */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
@@ -319,35 +366,32 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
             />
           </div>
 
-          {/* Upload card */}
-          <div className="surface-card rounded-xl p-5">
-            <h4 className="font-heading text-sm font-bold text-foreground mb-1">
-              Or upload a company deck to auto-fill this form
-            </h4>
-            <p className="font-body text-xs text-muted-foreground mb-4 leading-relaxed">
-              Only organisation-level fields will be extracted — everything else is ignored. Fields not found will be left blank for you to fill manually.
+          {saveOrgMutation.isError && (
+            <p className="text-xs text-destructive">
+              {isEditMode ? "Failed to update organisation. Please try again." : "Failed to create organisation. Please try again."}
             </p>
-            <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt,.md" className="hidden" onChange={() => {}} />
-            <Button type="button" variant="outline" className="rounded-xl text-xs" onClick={() => fileInputRef.current?.click()}>
-              Browse file
-            </Button>
-          </div>
-
-          {createOrgMutation.isError && (
-            <p className="text-xs text-destructive">Failed to create organisation. Please try again.</p>
           )}
 
           <p className="text-xs text-muted-foreground">
             You can update these details anytime from your settings.
           </p>
 
-          <Button
-            type="submit"
-            disabled={!orgName.trim() || createOrgMutation.isPending}
-            className="gap-2 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm h-11 px-6"
-          >
-            {createOrgMutation.isPending ? "Creating..." : "Save Organisation"}
-          </Button>
+          <div className="flex items-center gap-3">
+            {onCancel && (
+              <Button type="button" variant="outline" onClick={onCancel} className="rounded-xl font-semibold text-sm h-11 px-6">
+                Cancel
+              </Button>
+            )}
+            <Button
+              type="submit"
+              disabled={!orgName.trim() || saveOrgMutation.isPending}
+              className="gap-2 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm h-11 px-6"
+            >
+              {saveOrgMutation.isPending
+                ? isEditMode ? "Saving..." : "Creating..."
+                : isEditMode ? "Save changes" : "Save Organisation"}
+            </Button>
+          </div>
         </motion.form>
 
         {/* Branding */}
