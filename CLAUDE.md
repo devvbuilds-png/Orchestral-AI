@@ -150,6 +150,13 @@ Landing Page
                 + Inbox overlay (bell icon)
 ```
 
+## Dashboard Tutorial (V1)
+
+- The first-run dashboard tutorial is frontend-only and intentionally does **not** persist through the backend.
+- Seen-state is currently stored in org-scoped browser `localStorage` using the pattern `kaizen.dashboardTutorialSeen.org_<orgId>`.
+- Mark the tutorial as seen on either `Skip` or `Done`.
+- This is a temporary implementation choice for speed and scope control. If cross-device or account-level memory is needed later, migrate this state to server-side persistence instead of extending the localStorage approach.
+
 ---
 
 ## V5 Agent Architecture (Current — Complete)
@@ -668,4 +675,3 @@ These items were planned for V2 but intentionally deferred. Do not implement wit
 ### `pkb.meta.session_id` Field Rename
 - Rename stored field from `session_id` to `product_id` in PKB JSON
 - Cosmetic/hygiene only, deferred
-

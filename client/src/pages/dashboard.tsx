@@ -13,6 +13,7 @@ import MinimalModeToggle from "@/components/MinimalModeToggle";
 import { useMinimalMode } from "@/contexts/MinimalModeContext";
 import ReviewQueuePanel from "@/components/review-inbox";
 import AddProductModal from "@/components/AddProductModal";
+import DashboardTutorial, { type DashboardTutorialStep } from "@/components/dashboard-tutorial";
 import OrgSetup from "@/pages/OrgSetup";
 import { apiRequest } from "@/lib/queryClient";
 import type { Product, Organisation } from "@shared/schema";
@@ -51,6 +52,11 @@ function animateWindowScroll(targetY: number, durationMs: number) {
   });
 }
 
+function resetDashboardScrollToTop() {
+  if (typeof window === "undefined") return;
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+}
+
 const Dashboard = () => {
   const { minimal } = useMinimalMode();
   const [chatQuery, setChatQuery] = useState("");
@@ -59,7 +65,15 @@ const Dashboard = () => {
   const [orgReviewOpen, setOrgReviewOpen] = useState(false);
   const [addProductOpen, setAddProductOpen] = useState(false);
   const [editOrgOpen, setEditOrgOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [tutorialReady, setTutorialReady] = useState(false);
   const autoScrollPlayedRef = useRef(false);
+  const ciModuleRef = useRef<HTMLDivElement | null>(null);
+  const ciToggleRef = useRef<HTMLDivElement | null>(null);
+  const chatBarRef = useRef<HTMLDivElement | null>(null);
+  const productsSectionRef = useRef<HTMLElement | null>(null);
+  const addProductButtonRef = useRef<HTMLButtonElement | null>(null);
+  const themeToggleRef = useRef<HTMLDivElement | null>(null);
 
   const { data: authData } = useQuery<{ user: { id: string } } | null>({
     queryKey: ["/api/auth/me"],
@@ -107,9 +121,94 @@ const Dashboard = () => {
 
   const pendingConflicts = inboxData?.conflicts ?? [];
 
+  const tutorialStorageKey = orgId ? `kaizen.dashboardTutorialSeen.org_${orgId}` : null;
+  const isTutorialSeen = tutorialStorageKey
+    ? typeof window !== "undefined" && window.localStorage.getItem(tutorialStorageKey) === "true"
+    : false;
+
+  useEffect(() => {
+    setTutorialReady(!!isTutorialSeen);
+    setTutorialOpen(false);
+  }, [orgId, isTutorialSeen]);
+
+  useEffect(() => {
+    if (!orgId || typeof window === "undefined") return;
+    if (isTutorialSeen) return;
+
+    const timeoutId = window.setTimeout(() => {
+      resetDashboardScrollToTop();
+      setTutorialReady(true);
+      setTutorialOpen(true);
+    }, 500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [orgId, isTutorialSeen]);
+
+  const markTutorialSeen = () => {
+    if (typeof window === "undefined" || !tutorialStorageKey) return;
+    window.localStorage.setItem(tutorialStorageKey, "true");
+    setTutorialReady(true);
+  };
+
+  const handleCloseTutorial = () => {
+    markTutorialSeen();
+    setTutorialOpen(false);
+  };
+
+  const handleCompleteTutorial = () => {
+    markTutorialSeen();
+    setTutorialOpen(false);
+  };
+
+  const tutorialSteps: DashboardTutorialStep[] = [
+    {
+      id: "central-intelligence",
+      title: "This is your organisation home",
+      body: "Central Intelligence is the dashboard-level surface for understanding how Kaizen works and for asking questions across your organisation.",
+      target: ciModuleRef.current,
+      highlightMode: "viewport",
+      scrollAlign: "start",
+    },
+    {
+      id: "guide-vs-knowledge",
+      title: "Guide and Knowledge do different jobs",
+      body: "Use Guide to learn how to navigate and use the app. Use Knowledge when you want answers about your organisation or products.",
+      target: ciToggleRef.current,
+    },
+    {
+      id: "chat-bar",
+      title: "Ask from here",
+      body: "This chat bar is the fastest way to get oriented. In Guide mode it teaches the app. In Knowledge mode it answers from your captured knowledge base.",
+      target: chatBarRef.current,
+    },
+    {
+      id: "products-below",
+      title: "The dashboard continues below the hero",
+      body: "Your products live below this top section. Scroll down to manage the portfolio and move into individual product workspaces.",
+      target: productsSectionRef.current,
+      scrollAlign: "start",
+    },
+    {
+      id: "add-product",
+      title: "Add products here",
+      body: "Use Add product to create a workspace for a product. Each product gets its own chat, knowledge, personas, and documents area.",
+      target: addProductButtonRef.current,
+    },
+    {
+      id: "theme-toggle",
+      title: "Switch themes",
+      body: "Cycle between Dark, Light, and Minimal modes. Minimal strips away decorative elements for a clean, content-focused view.",
+      target: themeToggleRef.current,
+      scrollAlign: "start",
+    },
+  ];
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (minimal) return;
+    if (!tutorialReady) return;
+    if (tutorialOpen) return;
+    if (!isTutorialSeen) return;
     if (autoScrollPlayedRef.current) return;
     if (window.scrollY > 24) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -159,7 +258,7 @@ const Dashboard = () => {
       window.removeEventListener("touchstart", cancelAnimation);
       window.removeEventListener("keydown", cancelAnimation);
     };
-  }, [minimal]);
+  }, [minimal, tutorialOpen, isTutorialSeen]);
 
   const chatMutation = useMutation({
     mutationFn: async (query: string) => {
@@ -199,7 +298,19 @@ const Dashboard = () => {
           </span>
         </div>
         <div className="flex items-center gap-2 pointer-events-auto">
-          <MinimalModeToggle />
+          <button
+            type="button"
+            onClick={() => {
+              resetDashboardScrollToTop();
+              setTutorialOpen(true);
+            }}
+            className="flex h-9 items-center rounded-xl bg-secondary/80 ring-1 ring-border/60 px-3 text-[11px] font-bold uppercase tracking-[0.18em] text-primary transition-all hover:ring-border hover:bg-secondary"
+          >
+            Tutorial
+          </button>
+          <div ref={themeToggleRef}>
+            <MinimalModeToggle />
+          </div>
         </div>
       </div>
 
@@ -237,9 +348,10 @@ const Dashboard = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.65 }}
           className="mt-10 w-full max-w-xl"
+          ref={ciModuleRef}
         >
           {/* CI mode toggle */}
-          <div className="flex justify-center mb-3">
+          <div className="flex justify-center mb-3" ref={ciToggleRef}>
             <TooltipProvider delayDuration={300} skipDelayDuration={0}>
               <div className="flex rounded-full ring-1 ring-border/50 bg-secondary/60 p-0.5 gap-0.5">
                 <Tooltip>
@@ -276,7 +388,10 @@ const Dashboard = () => {
             </TooltipProvider>
           </div>
 
-          <div className="relative flex items-center rounded-full border border-border bg-secondary/60 backdrop-blur-sm ring-1 ring-border/30">
+          <div
+            className="relative flex items-center rounded-full border border-border bg-secondary/60 backdrop-blur-sm ring-1 ring-border/30"
+            ref={chatBarRef}
+          >
             <Input
               value={chatQuery}
               onChange={e => setChatQuery(e.target.value)}
@@ -332,7 +447,7 @@ const Dashboard = () => {
       </section>
 
       {/* ─── Products Section ─── */}
-      <section id="products-section" className="relative z-10 w-full px-6 pb-16">
+      <section id="products-section" ref={productsSectionRef} className="relative z-10 w-full px-6 pb-16">
         {/* Sticky sub-header */}
         <div className="sticky top-0 z-40 backdrop-blur-md bg-background/80 border-b border-border">
           <div className="max-w-6xl mx-auto flex items-center justify-between py-4 px-2">
@@ -358,6 +473,7 @@ const Dashboard = () => {
                 )}
               </button>
               <Button
+                ref={addProductButtonRef}
                 onClick={() => setAddProductOpen(true)}
                 className="gap-1.5 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm h-9 px-4"
               >
@@ -439,6 +555,12 @@ const Dashboard = () => {
           onComplete={() => setEditOrgOpen(false)}
         />
       )}
+      <DashboardTutorial
+        open={tutorialOpen}
+        steps={tutorialSteps}
+        onClose={handleCloseTutorial}
+        onComplete={handleCompleteTutorial}
+      />
     </div>
   );
 };
