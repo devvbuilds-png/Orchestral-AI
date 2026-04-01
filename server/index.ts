@@ -29,7 +29,11 @@ app.use(express.urlencoded({ extended: false }));
 
 // ── Session store (Postgres) ─────────────────────────────────────────────────
 const PgStore = connectPgSimple(session);
-const pgPool = new Pool({ connectionString: process.env.DATABASE_URL || "", max: 2 });
+const pgPool = new Pool({
+  connectionString: process.env.DATABASE_URL || "",
+  max: 2,
+  ssl: { rejectUnauthorized: false },
+});
 
 app.use(
   session({
