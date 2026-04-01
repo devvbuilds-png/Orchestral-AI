@@ -11,6 +11,10 @@ import { passport } from "./auth";
 const app = express();
 const httpServer = createServer(app);
 
+// Railway terminates TLS at the proxy. Trust it so secure session cookies
+// are correctly issued after OAuth redirects in production.
+app.set("trust proxy", 1);
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -46,6 +50,7 @@ app.use(
     saveUninitialized: false,
     cookie: {
       secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
       httpOnly: true,
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     },
