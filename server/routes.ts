@@ -8,12 +8,14 @@ import { db } from "./db";
 import { products, productMembers, conversations, messages, organisations, organisationMembers } from "@shared/schema";
 import { storage } from "./storage";
 import { requireAuth } from "./auth";
+import { supabase, UPLOADS_BUCKET } from "./supabase-storage";
 
 import {
   initializePKB,
   loadPKB,
   modifyPKB,
   deletePKB,
+  clearProductLock,
   addDocumentInput,
   addUrlInput,
   addMultipleUrlInputs,
@@ -179,10 +181,15 @@ const upload = multer({
 
 /** Normalize display-style field paths to dot-notation: "Pricing.Model" → "pricing.model" */
 function normalizeFieldPath(raw: string): string {
-  return raw
+  const cleaned = raw
     .split(".")
     .map((seg) => seg.trim().toLowerCase().replace(/\s+/g, "_"))
     .join(".");
+  // Strip top-level section prefix — callers route to the correct root object
+  if (cleaned.startsWith("facts.")) return cleaned.slice("facts.".length);
+  if (cleaned.startsWith("extensions.b2b.")) return cleaned.slice("extensions.b2b.".length);
+  if (cleaned.startsWith("extensions.b2c.")) return cleaned.slice("extensions.b2c.".length);
+  return cleaned;
 }
 
 /** Set a value at a dot-notation path, creating intermediate objects as needed */
@@ -341,7 +348,64 @@ export async function registerRoutes(
   app.delete("/api/products/:productId", async (req: Request, res: Response) => {
     try {
       const productId = req.params.productId as string;
-      await deletePKB(productId);
+      const userId = req.user?.id;
+
+      // Ownership check
+      const [product] = await db
+        .select()
+        .from(products)
+        .where(eq(products.id, parseInt(productId)))
+        .limit(1);
+
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      if (product.owner_id !== userId) {
+        return res.status(403).json({ error: "Only the product owner can delete this product" });
+      }
+
+      // 1. Clean up Supabase Storage — uploads bucket
+      try {
+        const { data: uploadFiles } = await supabase.storage
+          .from(UPLOADS_BUCKET)
+          .list(`product_${productId}`);
+        if (uploadFiles && uploadFiles.length > 0) {
+          await supabase.storage
+            .from(UPLOADS_BUCKET)
+            .remove(uploadFiles.map((f) => `product_${productId}/${f.name}`));
+        }
+      } catch (storageErr) {
+        console.error(`Failed to clean uploads for product ${productId}:`, storageErr);
+      }
+
+      // 2. Clean up Supabase Storage — pkb-store bucket (PKB + snapshots)
+      try {
+        await deletePKB(productId);
+      } catch (storageErr) {
+        console.error(`Failed to clean PKB storage for product ${productId}:`, storageErr);
+      }
+
+      // 3. Delete DB rows — no FK cascades, so delete children first
+      const productIdInt = parseInt(productId);
+
+      // Messages (via conversations for this product)
+      const productConvos = await db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(eq(conversations.product_id, productIdInt));
+      if (productConvos.length > 0) {
+        for (const conv of productConvos) {
+          await db.delete(messages).where(eq(messages.conversation_id, conv.id));
+        }
+      }
+
+      await db.delete(conversations).where(eq(conversations.product_id, productIdInt));
+      await db.delete(productMembers).where(eq(productMembers.product_id, productIdInt));
+      await db.delete(products).where(eq(products.id, productIdInt));
+
+      // 4. Clean up in-memory mutex
+      clearProductLock(productId);
+
       res.json({ success: true });
     } catch (error) {
       console.error("Delete product error:", error);
@@ -831,9 +895,6 @@ export async function registerRoutes(
           orgName: chatProductRow?.orgName ?? undefined,
         };
 
-        // Track this conversation as a founder session (once per conversationId)
-        await addFounderSession(productId, conversationId);
-
         // Load conversation history for multi-turn context
         const convIdIntForHistory = parseInt(conversationId);
         const historyRows = await db
@@ -848,6 +909,10 @@ export async function registerRoutes(
         // generates the mode-appropriate opening message.
         const effectiveMessage = message.trim() ? message : "[SESSION_START]";
         const { response, updates } = await processFounderResponse(context, effectiveMessage, conversationHistory);
+
+        // Track this conversation as a founder session AFTER mode detection,
+        // so the first message correctly sees isFirstProductSession=true.
+        await addFounderSession(productId, conversationId);
 
         for (const update of updates) {
           await applyProposedUpdate(productId, update, context.orgId);
@@ -1016,7 +1081,21 @@ export async function registerRoutes(
               }],
               quality_tag: "ok" as const,
             };
-            setNestedValue(freshPkb.facts, normalized, fact);
+            // Route to the correct PKB section based on the original path
+            const lowerPath = field_path.trim().toLowerCase();
+            let targetObj: any;
+            if (lowerPath.startsWith("extensions.b2b.")) {
+              if (!freshPkb.extensions) freshPkb.extensions = {};
+              if (!freshPkb.extensions.b2b) freshPkb.extensions.b2b = {};
+              targetObj = freshPkb.extensions.b2b;
+            } else if (lowerPath.startsWith("extensions.b2c.")) {
+              if (!freshPkb.extensions) freshPkb.extensions = {};
+              if (!freshPkb.extensions.b2c) freshPkb.extensions.b2c = {};
+              targetObj = freshPkb.extensions.b2c;
+            } else {
+              targetObj = freshPkb.facts;
+            }
+            setNestedValue(targetObj, normalized, fact);
           }
         });
       }

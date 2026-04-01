@@ -1,0 +1,30 @@
+<svg viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg" width="320" height="80">
+  <defs>
+    <linearGradient id="arcGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#DE7356;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#C45A3E;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="innerArcGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#DE7356;stop-opacity:0.35" />
+      <stop offset="100%" style="stop-color:#DE7356;stop-opacity:0.1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Mark: Kaizen spiral/arc symbol representing continuous improvement -->
+  <!-- Outer arc (large, open circle suggesting infinite loop) -->
+  <path d="M 40 14 A 26 26 0 1 1 14.5 46" fill="none" stroke="url(#arcGrad)" stroke-width="4.5" stroke-linecap="round"/>
+  <!-- Mid arc -->
+  <path d="M 40 23 A 17 17 0 1 1 23.5 46" fill="none" stroke="#DE7356" stroke-width="3" stroke-linecap="round" stroke-dasharray="none" opacity="0.6"/>
+  <!-- Inner arc / dot -->
+  <circle cx="40" cy="40" r="5" fill="url(#arcGrad)"/>
+  <!-- Upward arrow on outer arc terminus suggesting growth -->
+  <polyline points="10,50 14.5,46 19.5,51" fill="none" stroke="url(#arcGrad)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Wordmark -->
+  <!-- K -->
+  <text x="78" y="53" font-family="'Georgia', 'Times New Roman', serif" font-size="34" font-weight="700" letter-spacing="-0.5" fill="#F2EDE8">K</text>
+  <text x="98" y="53" font-family="'Georgia', 'Times New Roman', serif" font-size="34" font-weight="400" letter-spacing="1.5" fill="#F2EDE8">aizen</text>
+
+  <!-- Tagline -->
+  <text x="79" y="66" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="8.5" font-weight="400" letter-spacing="3.2" fill="#DE7356" text-anchor="start">PRODUCT KNOWLEDGE</text>
+</svg>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Zap, ArrowRight, ChevronDown, Bell } from "lucide-react";
+import KaizenMark from "@/components/KaizenMark";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,12 @@ const Dashboard = () => {
   const [ciMode, setCiMode] = useState<"guide" | "knowledge">("guide");
   const [orgReviewOpen, setOrgReviewOpen] = useState(false);
   const [addProductOpen, setAddProductOpen] = useState(false);
+
+  const { data: authData } = useQuery<{ user: { id: string } } | null>({
+    queryKey: ["/api/auth/me"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const currentUserId = authData?.user?.id;
 
   const { data: orgData } = useQuery<{ organisation: Organisation | null }>({
     queryKey: ["/api/organisations"],
@@ -100,10 +107,10 @@ const Dashboard = () => {
       <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 pointer-events-none">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/15 ring-1 ring-primary/30">
-            <Zap className="h-3.5 w-3.5 text-primary" />
+            <KaizenMark className="h-4 w-4" />
           </div>
           <span className="font-heading text-base font-bold tracking-tight text-foreground">
-            Orchestral<span className="text-primary">-AI</span>
+            Kaizen
           </span>
         </div>
         <div className="flex items-center gap-2 pointer-events-auto">
@@ -163,7 +170,7 @@ const Dashboard = () => {
                       Guide
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Ask how to use Orchestral-AI — navigation, features, getting started</TooltipContent>
+                  <TooltipContent>Ask how to use Kaizen — navigation, features, getting started</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -189,7 +196,7 @@ const Dashboard = () => {
               value={chatQuery}
               onChange={e => setChatQuery(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleChatSubmit()}
-              placeholder={ciMode === "guide" ? "Ask me how to use Orchestral-AI..." : "Ask anything across your products..."}
+              placeholder={ciMode === "guide" ? "Ask me how to use Kaizen..." : "Ask anything across your products..."}
               className="border-0 bg-transparent rounded-full h-12 pl-5 pr-14 text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
             />
             <button
@@ -311,7 +318,7 @@ const Dashboard = () => {
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {products.map((product, i) => (
-                <ProductCard key={product.id} product={product} index={i} />
+                <ProductCard key={product.id} product={product} index={i} currentUserId={currentUserId} />
               ))}
             </div>
           )}

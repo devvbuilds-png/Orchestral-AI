@@ -2,7 +2,8 @@ import { useState, useCallback } from "react";
 import { useParams } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowLeft, Bell, Plus, CheckCircle, Zap } from "lucide-react";
+import { ArrowLeft, Bell, Plus, CheckCircle } from "lucide-react";
+import KaizenMark from "@/components/KaizenMark";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
@@ -233,10 +234,10 @@ const ProductWorkspace = () => {
       {/* Branding */}
       <div className="flex items-center gap-3 pt-6 pb-4">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/15 ring-1 ring-primary/30">
-          <Zap className="h-3.5 w-3.5 text-primary" />
+          <KaizenMark className="h-4 w-4" />
         </div>
         <span className="font-heading text-lg font-bold tracking-tight text-foreground">
-          Orchestral<span className="text-primary">-AI</span>
+          Kaizen
         </span>
         <MinimalModeToggle />
       </div>

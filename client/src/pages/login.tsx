@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import ParticleBackground from "@/components/particle-background";
+import KaizenMark from "@/components/KaizenMark";
 
 export default function Login() {
   return (
@@ -16,9 +17,9 @@ export default function Login() {
           {/* Logo / brand */}
           <div className="text-center mb-8">
             <div className="w-14 h-14 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mx-auto mb-4">
-              <span className="font-heading text-2xl font-bold text-primary">O</span>
+              <KaizenMark className="h-7 w-7" />
             </div>
-            <h1 className="font-heading text-2xl font-semibold text-foreground">Orchestral AI</h1>
+            <h1 className="font-heading text-2xl font-semibold text-foreground">Kaizen</h1>
             <p className="text-muted-foreground text-sm mt-1">Product knowledge platform</p>
           </div>
 

@@ -228,6 +228,70 @@ function mapToGap(g: SynthesizerGapItem, index: number, severity: Gap["severity"
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Helper: build structured field status map from pkb.facts
+// ──────────────────────────────────────────────────────────────────────────────
+
+const FIELD_MAP_SKIP_KEYS = new Set([
+  "sources", "source_type", "source_ref", "captured_at", "evidence",
+  "quality_tag", "confidence", "last_updated", "lifecycle_status",
+  "sensitive", "approved", "locked", "do_not_ask", "last_verified", "audit_trail",
+]);
+
+function buildFieldStatusMap(pkb: PKB): { populated: string[]; empty: string[] } {
+  const populated: string[] = [];
+  const empty: string[] = [];
+
+  function walk(obj: any, prefix: string): void {
+    if (!obj || typeof obj !== "object") return;
+
+    // Array of items (e.g. features[], use_cases[]) — treat as single field
+    if (Array.isArray(obj)) {
+      if (obj.length > 0) populated.push(prefix);
+      else empty.push(prefix);
+      return;
+    }
+
+    // FactField wrapper — has a .value property
+    if ("value" in obj) {
+      const v = obj.value;
+      if (v === null || v === undefined) { empty.push(prefix); return; }
+      if (typeof v === "string" && v.trim() === "") { empty.push(prefix); return; }
+      if (Array.isArray(v) && v.length === 0) { empty.push(prefix); return; }
+      populated.push(prefix);
+      return;
+    }
+
+    // Plain object — recurse into children, skip metadata keys
+    let hasChildren = false;
+    for (const key of Object.keys(obj)) {
+      if (FIELD_MAP_SKIP_KEYS.has(key)) continue;
+      hasChildren = true;
+      walk(obj[key], prefix ? `${prefix}.${key}` : key);
+    }
+    // If the object had no non-metadata children, treat it as empty
+    if (!hasChildren && prefix) empty.push(prefix);
+  }
+
+  walk(pkb.facts, "facts");
+  return { populated, empty };
+}
+
+function formatFieldStatusBlock(populated: string[], empty: string[]): string {
+  const popLines = populated.length > 0
+    ? populated.map(p => `- ${p}`).join("\n")
+    : "- (none)";
+  const emptyLines = empty.length > 0
+    ? empty.map(p => `- ${p}`).join("\n")
+    : "- (none)";
+  return `## FIELD STATUS MAP
+### Populated fields (DO NOT generate gaps for these):
+${popLines}
+
+### Empty fields (gap candidates — only if strategically important):
+${emptyLines}`;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // System prompt — injected once, static
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -265,7 +329,7 @@ OUTPUT FORMAT (return exactly this structure):
 RULES:
 - personas: max 3. Only derive from signals explicitly present in the KB — do not invent personas from absent information.
 - suggestedQuestions: exactly 3 items. Must reference actual captured product details — not generic placeholders.
-- gapAnalysis: only list fields that are genuinely empty or incomplete based on the KB content above. Do not ask about fields that already have content.
+- gapAnalysis: Use the FIELD STATUS MAP in the user prompt to determine which fields are populated vs empty. NEVER generate a gap for any field listed under "Populated fields". Only generate gaps for fields listed under "Empty fields" that are strategically important for this product.
 - productBrief: write only from captured facts. Do not invent information not present in the KB.
 - confidenceScore is computed by code and passed to you — use it only to write accurate confidenceReasoning.`;
 
@@ -311,14 +375,22 @@ export async function runSynthesizer(
     .join(", ");
 
   const skippedBlock = skippedPaths.length > 0
-    ? `\n## Skipped by user (do NOT generate gaps for these field paths)\n${skippedPaths.join(", ")}\n`
+    ? `\n## SKIPPED BY USER — MANDATORY EXCLUSION
+The user has permanently declined to answer these fields. NEVER generate a gap for these paths under any circumstances:
+${skippedPaths.map(p => `- ${p}`).join("\n")}
+If you are considering generating a gap that is semantically similar to any skipped path (same concept, different key name), skip it. This is a hard constraint — violations invalidate the entire output.\n`
     : "";
+
+  const { populated, empty } = buildFieldStatusMap(pkb);
+  const fieldStatusBlock = formatFieldStatusBlock(populated, empty);
 
   const userPrompt = `Product: ${productName}
 Product type: ${productType.toUpperCase()}
 Organisation: ${orgName}
 ${orgContext ? `\n${orgContext}\n` : ""}
 Computed confidence score: ${confidenceScore}% — KB stage: ${kbStage}
+
+${fieldStatusBlock}
 
 ## Current knowledge base
 ${formattedFacts || "No facts captured yet."}
@@ -337,6 +409,7 @@ Synthesise the above into the required JSON format. The confidence score is ${co
     rawResponse = await callLLM(SYNTHESIZER_SYSTEM_PROMPT, userPrompt, {
       responseFormat: "json",
       maxTokens: 4096,
+      temperature: 0.2,
     });
   } catch (err) {
     console.error(`[synthesizer] LLM call failed for product ${productId}:`, err);
@@ -429,17 +502,27 @@ Synthesise the above into the required JSON format. The confidence score is ${co
       }
     }
 
-    // Carry forward do_not_ask from old gaps by field_path
+    // Carry forward do_not_ask from old gaps by field_path (exact + fuzzy last-segment match)
     const doNotAskPaths = new Set(
       oldGaps.filter(g => g.do_not_ask).map(g => g.field_path),
+    );
+    const doNotAskLastSegments = new Set(
+      Array.from(doNotAskPaths).map(p => p.split(".").pop()!),
     );
     for (const gap of allGaps) {
       if (doNotAskPaths.has(gap.field_path)) {
         gap.do_not_ask = true;
+      } else {
+        // Fuzzy: last segment match catches prefix variations (e.g. "pricing.tiers" vs "facts.pricing.tiers")
+        const lastSeg = gap.field_path.split(".").pop();
+        if (lastSeg && doNotAskLastSegments.has(lastSeg)) {
+          gap.do_not_ask = true;
+        }
       }
     }
 
-    freshPkb.gaps.current = allGaps;
+    // Filter out do_not_ask gaps so they never surface in the UI
+    freshPkb.gaps.current = allGaps.filter(g => !g.do_not_ask);
   });
 
   // ── Write to DB ────────────────────────────────────────────────────────────

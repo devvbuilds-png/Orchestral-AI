@@ -1,0 +1,16 @@
+<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" width="80" height="80">
+  <defs>
+    <linearGradient id="arcGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#DE7356;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#C45A3E;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Outer arc -->
+  <path d="M 40 14 A 26 26 0 1 1 14.5 46" fill="none" stroke="url(#arcGrad)" stroke-width="4.5" stroke-linecap="round"/>
+  <!-- Mid arc -->
+  <path d="M 40 23 A 17 17 0 1 1 23.5 46" fill="none" stroke="#DE7356" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+  <!-- Inner dot -->
+  <circle cx="40" cy="40" r="5" fill="url(#arcGrad)"/>
+  <!-- Upward arrow -->
+  <polyline points="10,50 14.5,46 19.5,51" fill="none" stroke="url(#arcGrad)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

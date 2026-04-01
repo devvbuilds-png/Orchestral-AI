@@ -120,6 +120,7 @@ Return a JSON object with a "facts" array containing all extracted facts.`;
   const response = await callLLM(EXTRACTION_SYSTEM_PROMPT, userPrompt, {
     responseFormat: "json",
     maxTokens: 8192,
+    temperature: 0.2,
   });
 
   const result = parseJSONResponse<ExtractionResult>(response);

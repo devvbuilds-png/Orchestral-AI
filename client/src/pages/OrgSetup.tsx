@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronUp, ChevronDown, Zap } from "lucide-react";
+import { ChevronUp, ChevronDown } from "lucide-react";
+import KaizenMark from "@/components/KaizenMark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useMinimalMode } from "@/contexts/MinimalModeContext";
@@ -116,7 +117,7 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
             Set up your organisation
           </h1>
           <p className="font-body text-sm text-muted-foreground mb-8 leading-relaxed">
-            This is the home for all your products inside Orchestral-AI. Think of it as the container — your org name, industry, and size help us tailor the experience for your team.
+            This is the home for all your products inside Kaizen. Think of it as the container — your org name, industry, and size help us tailor the experience for your team.
           </p>
         </motion.div>
 
@@ -351,9 +352,9 @@ const OrgSetup = ({ onComplete }: OrgSetupProps) => {
 
         {/* Branding */}
         <div className="flex items-center justify-center gap-2 mt-12 opacity-40">
-          <Zap className="h-3.5 w-3.5 text-primary" />
+          <KaizenMark className="h-4 w-4" />
           <span className="font-heading text-xs font-medium text-muted-foreground">
-            Orchestral<span className="text-primary">-AI</span>
+            Kaizen
           </span>
         </div>
       </div>

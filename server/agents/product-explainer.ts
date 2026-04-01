@@ -26,7 +26,7 @@ export interface ExplainerContext {
 // Static app guide knowledge
 // ──────────────────────────────────────────────────────────────────────────────
 
-const APP_GUIDE_KNOWLEDGE = `Orchestral-AI is a product knowledge platform. Here is how it works:
+const APP_GUIDE_KNOWLEDGE = `Kaizen is a product knowledge platform. Here is how it works:
 
 NAVIGATION
 - Dashboard: Your home base. Shows all your products and the Central Intelligence chat.
@@ -64,7 +64,7 @@ CONFIDENCE SCORE
 
 CENTRAL INTELLIGENCE TOGGLE
 - "Knowledge" mode: answers questions about your products using the knowledge base.
-- "Guide" mode (this mode): answers questions about how to use Orchestral-AI.`;
+- "Guide" mode (this mode): answers questions about how to use Kaizen.`;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -91,7 +91,7 @@ interface BuildPromptParams {
 function buildExplainerSystemPrompt(p: BuildPromptParams): string {
   // ── app_guide ─────────────────────────────────────────────────────────────
   if (p.surface === "app_guide") {
-    return `You are the Guide for Orchestral-AI, helping users understand how to use the platform.
+    return `You are the Guide for Kaizen, helping users understand how to use the platform.
 
 ## APP KNOWLEDGE
 

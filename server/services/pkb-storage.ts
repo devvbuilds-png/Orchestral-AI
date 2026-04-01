@@ -29,6 +29,11 @@ export async function withPKBLock<T>(productId: string, fn: () => Promise<T>): P
   }
 }
 
+/** Remove the in-memory mutex entry for a deleted product. */
+export function clearProductLock(productId: string): void {
+  locks.delete(productId);
+}
+
 /**
  * Safe read-modify-write for a product PKB.
  * Acquires the per-product lock, loads the PKB, runs the mutator in-place,

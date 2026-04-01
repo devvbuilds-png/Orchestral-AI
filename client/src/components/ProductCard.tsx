@@ -1,8 +1,22 @@
 import { useState } from "react";
-import { ArrowRight, AlertCircle, TrendingUp, FileText, ChevronDown } from "lucide-react";
+import { ArrowRight, AlertCircle, TrendingUp, FileText, ChevronDown, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMinimalMode } from "@/contexts/MinimalModeContext";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import type { Product } from "@shared/schema";
 
 interface ProductCardProps {
@@ -11,6 +25,7 @@ interface ProductCardProps {
   lastActive?: string;
   factCount?: number;
   conflictCount?: number;
+  currentUserId?: string;
 }
 
 function getStateCfg(state: string, minimal: boolean) {
@@ -32,11 +47,28 @@ function getStateCfg(state: string, minimal: boolean) {
   return map[state] ?? map.learning;
 }
 
-const ProductCard = ({ product, index, lastActive = "—", factCount = 0, conflictCount = 0 }: ProductCardProps) => {
+const ProductCard = ({ product, index, lastActive = "—", factCount = 0, conflictCount = 0, currentUserId }: ProductCardProps) => {
   const { minimal } = useMinimalMode();
   const [expanded, setExpanded] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const confidence = product.confidence_score ?? 0;
   const state = getStateCfg(product.state ?? "learning", minimal);
+
+  const isOwner = currentUserId != null && product.owner_id === currentUserId;
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/products/${product.id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      toast({ title: `${product.name} deleted` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to delete product", description: err.message, variant: "destructive" });
+    },
+  });
 
   const confidenceColor = minimal
     ? "text-foreground"
@@ -55,6 +87,37 @@ const ProductCard = ({ product, index, lastActive = "—", factCount = 0, confli
       transition={{ duration: 0.35, delay: index * 0.06, ease: [0.25, 0.46, 0.45, 0.94] }}
     >
       <div className="group relative rounded-2xl bg-card ring-1 ring-border hover:ring-primary/40 transition-all duration-200 shadow-sm hover:shadow-md">
+        {isOwner && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button
+                className="absolute top-3 right-10 z-10 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete {product.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete the product and all its knowledge base data. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => deleteMutation.mutate()}
+                  disabled={deleteMutation.isPending}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+
         <button
           onClick={() => setExpanded(!expanded)}
           className="w-full p-5 cursor-pointer text-center"

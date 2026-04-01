@@ -157,6 +157,7 @@ export async function callLLM(
 ): Promise<string> {
   const {
     model = DEFAULT_MODEL,
+    temperature,
     maxTokens = 4096,
     responseFormat = "text",
     conversationHistory = [],
@@ -171,6 +172,7 @@ export async function callLLM(
         { role: "user", content: userPrompt },
       ],
       max_completion_tokens: maxTokens,
+      ...(temperature !== undefined && { temperature }),
       ...(responseFormat === "json" && { response_format: { type: "json_object" } }),
     });
 

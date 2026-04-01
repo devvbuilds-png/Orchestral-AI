@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { ArrowRight, Brain, Lightbulb, RefreshCw, Zap } from "lucide-react";
+import { ArrowRight, Brain, Lightbulb, RefreshCw } from "lucide-react";
+import KaizenMark from "@/components/KaizenMark";
 import { Button } from "@/components/ui/button";
 import ParticleBackground from "@/components/particle-background";
 import { useMinimalMode } from "@/contexts/MinimalModeContext";
@@ -63,9 +64,9 @@ const Welcome = ({ onGetStarted }: WelcomeProps) => {
           transition={{ delay: 0.35 }}
           className="font-heading text-5xl md:text-6xl font-bold tracking-tight text-foreground mt-8 leading-tight"
         >
-          One brain.
+          Welcome to Kaizen.
           <br />
-          All your products.
+          A product knowledge base.
         </motion.h1>
 
         <motion.p
@@ -74,8 +75,8 @@ const Welcome = ({ onGetStarted }: WelcomeProps) => {
           transition={{ delay: 0.5 }}
           className="font-body text-base md:text-lg text-muted-foreground mt-6 max-w-2xl leading-relaxed"
         >
-          Every product your company builds carries a universe of knowledge — decisions, features, context, gaps.
-          Orchestral-AI brings it all into one place so anyone on your team can ask questions, find answers, and keep it growing.
+          Every product your company builds carries a universe of knowledge.
+          Kaizen brings it all into one place so anyone on your team can ask questions, find answers, and keep it growing.
         </motion.p>
 
         {/* Feature Cards */}
@@ -129,9 +130,9 @@ const Welcome = ({ onGetStarted }: WelcomeProps) => {
           transition={{ delay: 1.2 }}
           className="flex items-center gap-2 mt-16 opacity-50"
         >
-          <Zap className="h-3.5 w-3.5 text-primary" />
+          <KaizenMark className="h-4 w-4" />
           <span className="font-heading text-xs font-medium text-muted-foreground">
-            Powered by Orchestral<span className="text-primary">-AI</span>
+            Powered by Kaizen
           </span>
         </motion.div>
       </div>
