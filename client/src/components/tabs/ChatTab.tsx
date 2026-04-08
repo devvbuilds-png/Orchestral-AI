@@ -461,7 +461,7 @@ const ChatTab = ({
         {/* Scrollable message list */}
         <div className="flex-1 overflow-y-auto pr-2 mb-3 min-h-0">
           <div className="space-y-4 pb-2">
-            {localMessages.map((msg, i) => {
+            {localMessages.filter((m) => !(m.role === "user" && m.content.trim() === "[SESSION_START]")).map((msg, i) => {
               const ingestion = parseIngestionMarker(msg.content);
               if (ingestion.isIngestion) {
                 return (
@@ -556,13 +556,95 @@ const ChatTab = ({
               );
             })}
 
-            {sendMutation.isPending && (
+            {/* Welcome cards — inline as a second message after learner's first response */}
+            {showWelcomeCards && localMessages.length > 0 && !newConvMutation.isPending && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
+                className="flex gap-3"
+              >
+                <div className={`flex h-8 w-8 items-center justify-center rounded-xl shrink-0 ${
+                  minimal ? "bg-secondary ring-1 ring-border" : "bg-glow-purple/10 ring-1 ring-glow-purple/20"
+                }`}>
+                  <Bot className={`h-3.5 w-3.5 ${minimal ? "text-muted-foreground" : "text-glow-purple"}`} />
+                </div>
+                <div className="max-w-[75%]">
+                  <p className="text-sm text-muted-foreground mb-2.5">You can get started by uploading a document or pasting a URL:</p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`group relative rounded-xl bg-secondary/40 ring-1 ring-border/50 p-4 text-center cursor-pointer transition-all duration-300 ${
+                        !minimal && "hover:ring-glow-purple/40 hover:bg-glow-purple/5"
+                      } ${uploadMutation.isPending ? "opacity-60 pointer-events-none" : ""}`}
+                    >
+                      <div className={`flex h-9 w-9 items-center justify-center rounded-lg mx-auto mb-1.5 transition-all ${
+                        minimal ? "bg-secondary ring-1 ring-border" : "bg-glow-purple/10 ring-1 ring-glow-purple/20 group-hover:ring-glow-purple/40"
+                      }`}>
+                        <FileUp className={`h-4 w-4 ${minimal ? "text-muted-foreground" : "text-glow-purple"}`} />
+                      </div>
+                      <p className="text-xs font-bold text-foreground mb-1">
+                        {uploadMutation.isPending ? "Uploading…" : "Upload Files"}
+                      </p>
+                      <div className="flex flex-wrap gap-1 justify-center">
+                        {["PDF", "DOCX", "TXT", "MD"].map((fmt) => (
+                          <span key={fmt} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ring-1 ${
+                            minimal ? "bg-secondary text-muted-foreground ring-border" : "bg-glow-purple/10 text-glow-purple ring-glow-purple/20"
+                          }`}>{fmt}</span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className={`group relative rounded-xl bg-secondary/40 ring-1 ring-border/50 p-4 transition-all duration-300 ${
+                      !minimal && "hover:ring-glow-pink/40 hover:bg-glow-pink/5"
+                    }`}>
+                      <div className={`flex h-9 w-9 items-center justify-center rounded-lg mx-auto mb-1.5 transition-all ${
+                        minimal ? "bg-secondary ring-1 ring-border" : "bg-glow-pink/10 ring-1 ring-glow-pink/20 group-hover:ring-glow-pink/40"
+                      }`}>
+                        <ExternalLink className={`h-4 w-4 ${minimal ? "text-muted-foreground" : "text-glow-pink"}`} />
+                      </div>
+                      <p className="text-xs font-bold text-foreground mb-1.5 text-center">Paste URL</p>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <div className="relative">
+                          <Link2 className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                          <Input
+                            placeholder="https://..."
+                            className="pl-7 bg-card/50 border-muted rounded-lg h-7 text-xs"
+                            value={cardUrlValue}
+                            onChange={(e) => setCardUrlValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && cardUrlValue.trim()) fetchUrlMutation.mutate(cardUrlValue.trim());
+                            }}
+                          />
+                        </div>
+                        <Button
+                          size="sm"
+                          className={`w-full mt-1.5 border-0 rounded-lg h-6 text-[11px] font-bold ${
+                            minimal ? "bg-secondary text-foreground hover:bg-secondary/80" : "bg-glow-pink/15 text-glow-pink hover:bg-glow-pink/25"
+                          }`}
+                          onClick={() => cardUrlValue.trim() && fetchUrlMutation.mutate(cardUrlValue.trim())}
+                          disabled={fetchUrlMutation.isPending || !cardUrlValue.trim()}
+                        >
+                          {fetchUrlMutation.isPending ? "Fetching…" : "Fetch Content"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {(sendMutation.isPending || newConvMutation.isPending) && (
               <div className="flex gap-3">
                 <div className={`flex h-8 w-8 items-center justify-center rounded-xl shrink-0 ${minimal ? "bg-secondary ring-1 ring-border" : "bg-glow-purple/10 ring-1 ring-glow-purple/20"}`}>
                   <Bot className={`h-3.5 w-3.5 ${minimal ? "text-muted-foreground" : "text-glow-purple"}`} />
                 </div>
                 <div className="rounded-2xl px-4 py-3 bg-secondary/60 ring-1 ring-border/50">
-                  <span className="text-sm text-muted-foreground">Thinking...</span>
+                  <div className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+                  </div>
                 </div>
               </div>
             )}
@@ -577,78 +659,6 @@ const ChatTab = ({
           </div>
         </div>
 
-        {/* Welcome cards — first-session only, collapse after first user message */}
-        {showWelcomeCards && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="grid grid-cols-2 gap-3 mb-3 shrink-0"
-          >
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className={`group relative rounded-2xl bg-secondary/40 ring-1 ring-border/50 p-5 text-center cursor-pointer transition-all duration-300 ${
-                !minimal && "hover:ring-glow-purple/40 hover:bg-glow-purple/5"
-              } ${uploadMutation.isPending ? "opacity-60 pointer-events-none" : ""}`}
-            >
-              {!minimal && <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-glow-purple/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />}
-              <div className="relative">
-                <div className={`flex h-10 w-10 items-center justify-center rounded-xl mx-auto mb-2 transition-all ${
-                  minimal ? "bg-secondary ring-1 ring-border" : "bg-glow-purple/10 ring-1 ring-glow-purple/20 group-hover:ring-glow-purple/40"
-                }`}>
-                  <FileUp className={`h-4 w-4 ${minimal ? "text-muted-foreground" : "text-glow-purple"}`} />
-                </div>
-                <p className="text-sm font-bold text-foreground mb-1">
-                  {uploadMutation.isPending ? "Uploading…" : (minimal ? "Upload Files" : "📄 Upload Files")}
-                </p>
-                <div className="flex flex-wrap gap-1.5 justify-center">
-                  {["PDF", "DOCX", "TXT", "MD"].map((fmt) => (
-                    <span key={fmt} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ${
-                      minimal ? "bg-secondary text-muted-foreground ring-border" : "bg-glow-purple/10 text-glow-purple ring-glow-purple/20"
-                    }`}>{fmt}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className={`group relative rounded-2xl bg-secondary/40 ring-1 ring-border/50 p-5 transition-all duration-300 ${
-              !minimal && "hover:ring-glow-pink/40 hover:bg-glow-pink/5"
-            }`}>
-              {!minimal && <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-glow-pink/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />}
-              <div className="relative">
-                <div className={`flex h-10 w-10 items-center justify-center rounded-xl mx-auto mb-2 transition-all ${
-                  minimal ? "bg-secondary ring-1 ring-border" : "bg-glow-pink/10 ring-1 ring-glow-pink/20 group-hover:ring-glow-pink/40"
-                }`}>
-                  <ExternalLink className={`h-4 w-4 ${minimal ? "text-muted-foreground" : "text-glow-pink"}`} />
-                </div>
-                <p className="text-sm font-bold text-foreground mb-2 text-center">{minimal ? "Paste URL" : "🔗 Paste URL"}</p>
-                <div onClick={(e) => e.stopPropagation()}>
-                  <div className="relative">
-                    <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input
-                      placeholder="https://..."
-                      className="pl-8 bg-card/50 border-muted rounded-lg h-8 text-xs"
-                      value={cardUrlValue}
-                      onChange={(e) => setCardUrlValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && cardUrlValue.trim()) fetchUrlMutation.mutate(cardUrlValue.trim());
-                      }}
-                    />
-                  </div>
-                  <Button
-                    size="sm"
-                    className={`w-full mt-1.5 border-0 rounded-lg h-7 text-xs font-bold ${
-                      minimal ? "bg-secondary text-foreground hover:bg-secondary/80" : "bg-glow-pink/15 text-glow-pink hover:bg-glow-pink/25"
-                    }`}
-                    onClick={() => cardUrlValue.trim() && fetchUrlMutation.mutate(cardUrlValue.trim())}
-                    disabled={fetchUrlMutation.isPending || !cardUrlValue.trim()}
-                  >
-                    {fetchUrlMutation.isPending ? "Fetching…" : "Fetch Content"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
 
         {/* Input bar */}
         <div className="flex gap-2 border-t border-border/50 pt-4 shrink-0">

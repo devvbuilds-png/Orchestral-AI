@@ -927,7 +927,7 @@ export async function registerRoutes(
         // Persist messages before streaming so they're in DB by the time the
         // client receives the 'done' event and invalidates its messages query.
         const convIdInt = parseInt(conversationId);
-        if (message.trim()) {
+        if (message.trim() && effectiveMessage !== "[SESSION_START]") {
           // Don't persist the synthetic [SESSION_START] sentinel as a user turn
           await db.insert(messages).values({ conversation_id: convIdInt, role: "user", content: message.trim() });
         }
