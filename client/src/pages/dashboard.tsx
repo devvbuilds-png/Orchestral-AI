@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, Zap, ArrowRight, ChevronDown, Bell } from "lucide-react";
+import { Plus, Zap, ArrowRight, ChevronDown, Bell, LogOut, User } from "lucide-react";
 import KaizenMark from "@/components/KaizenMark";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,8 @@ import ReviewQueuePanel from "@/components/review-inbox";
 import AddProductModal from "@/components/AddProductModal";
 import DashboardTutorial, { type DashboardTutorialStep } from "@/components/dashboard-tutorial";
 import OrgSetup from "@/pages/OrgSetup";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import type { Product, Organisation } from "@shared/schema";
 
 
@@ -75,11 +76,13 @@ const Dashboard = () => {
   const addProductButtonRef = useRef<HTMLButtonElement | null>(null);
   const themeToggleRef = useRef<HTMLDivElement | null>(null);
 
-  const { data: authData } = useQuery<{ user: { id: string } } | null>({
+  const { data: authData } = useQuery<{ user: { id: string; email: string | null; display_name: string | null } } | null>({
     queryKey: ["/api/auth/me"],
     staleTime: 5 * 60 * 1000,
   });
   const currentUserId = authData?.user?.id;
+  const currentUserName = authData?.user?.display_name;
+  const currentUserEmail = authData?.user?.email;
 
   const { data: orgData } = useQuery<{ organisation: Organisation | null }>({
     queryKey: ["/api/organisations"],
@@ -311,6 +314,34 @@ const Dashboard = () => {
           <div ref={themeToggleRef}>
             <MinimalModeToggle />
           </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary/80 ring-1 ring-border/60 text-muted-foreground transition-all hover:ring-border hover:bg-secondary hover:text-foreground"
+              >
+                <User className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col gap-1">
+                  {currentUserName && <p className="text-sm font-medium">{currentUserName}</p>}
+                  {currentUserEmail && <p className="text-xs text-muted-foreground">{currentUserEmail}</p>}
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  window.location.href = "/auth/logout";
+                }}
+                className="text-destructive focus:text-destructive cursor-pointer"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

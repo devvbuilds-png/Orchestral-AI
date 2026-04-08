@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useParams } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowLeft, Bell, Plus, CheckCircle } from "lucide-react";
+import { ArrowLeft, Bell, Plus, CheckCircle, LogOut, User } from "lucide-react";
 import KaizenMark from "@/components/KaizenMark";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { useMinimalMode } from "@/contexts/MinimalModeContext";
 import ReviewQueuePanel from "@/components/review-inbox";
 import { ProcessingOverlay } from "@/components/processing-overlay";
 import { GapFillDialog } from "@/components/gap-fill-dialog";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import type { Product, PKB, Gap } from "@shared/schema";
 
 const tabs = ["Chat", "Knowledge", "Personas", "Documents"] as const;
@@ -58,6 +59,13 @@ const ProductWorkspace = () => {
   } | null>(null);
 
   const productIdNum = productId ? parseInt(productId) : null;
+
+  const { data: authData } = useQuery<{ user: { id: string; email: string | null; display_name: string | null } } | null>({
+    queryKey: ["/api/auth/me"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const currentUserName = authData?.user?.display_name;
+  const currentUserEmail = authData?.user?.email;
 
   const { data: productsData } = useQuery<Product[]>({
     queryKey: ["/api/products"],
@@ -232,7 +240,7 @@ const ProductWorkspace = () => {
       {!minimal && <ParticleBackground />}
 
       {/* Branding */}
-      <div className="flex items-center gap-3 pt-6 pb-4">
+      <div className="flex items-center gap-3 pt-6 pb-4 w-full max-w-5xl px-6">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/15 ring-1 ring-primary/30">
           <KaizenMark className="h-4 w-4" />
         </div>
@@ -240,6 +248,36 @@ const ProductWorkspace = () => {
           Kaizen
         </span>
         <MinimalModeToggle />
+        <div className="ml-auto">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary/80 ring-1 ring-border/60 text-muted-foreground transition-all hover:ring-border hover:bg-secondary hover:text-foreground"
+              >
+                <User className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col gap-1">
+                  {currentUserName && <p className="text-sm font-medium">{currentUserName}</p>}
+                  {currentUserEmail && <p className="text-xs text-muted-foreground">{currentUserEmail}</p>}
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  window.location.href = "/auth/logout";
+                }}
+                className="text-destructive focus:text-destructive cursor-pointer"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Inner Panel */}
