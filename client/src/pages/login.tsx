@@ -20,7 +20,7 @@ export default function Login() {
               <KaizenMark className="h-7 w-7" />
             </div>
             <h1 className="font-heading text-2xl font-semibold text-foreground">Kaizen</h1>
-            <p className="text-muted-foreground text-sm mt-1">Product knowledge platform</p>
+            <p className="text-muted-foreground text-sm mt-1">Context &amp; portfolio platform for teams and builders</p>
           </div>
 
           {/* Google OAuth button */}

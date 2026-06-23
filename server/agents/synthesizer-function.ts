@@ -1,5 +1,6 @@
 import { callLLM, parseJSONResponse, buildOrgContext } from "./base-agent";
 import { loadOrgPKB, loadPKB, modifyPKB } from "../services/pkb-storage";
+import { populateInbox } from "../services/inbox-populator";
 import { formatPKBForContext } from "./product-explainer";
 import { db } from "../db";
 import { products } from "@shared/schema";
@@ -273,6 +274,10 @@ function buildFieldStatusMap(pkb: PKB): { populated: string[]; empty: string[] }
   }
 
   walk(pkb.facts, "facts");
+  // Also walk extensions so the LLM has coverage guidance for B2B/B2C fields
+  // (audit A6) — these feed the confidence score but were previously invisible.
+  if (pkb.extensions?.b2b) walk(pkb.extensions.b2b, "extensions.b2b");
+  if (pkb.extensions?.b2c) walk(pkb.extensions.b2c, "extensions.b2c");
   return { populated, empty };
 }
 
@@ -367,9 +372,13 @@ export async function runSynthesizer(
   const existingGapPaths = currentGaps
     .map(g => g.field_path)
     .join(", ");
-  const skippedPaths = currentGaps
-    .filter(g => g.do_not_ask)
-    .map(g => g.field_path);
+  // Skip list = gaps marked do_not_ask + fields the founder explicitly declined
+  // in the Learner (audit A5 — previously only do_not_ask gaps were excluded).
+  const declinedFields: string[] = ((pkb.meta as any)?.inputs?.declined_fields ?? []) as string[];
+  const skippedPaths = Array.from(new Set([
+    ...currentGaps.filter(g => g.do_not_ask).map(g => g.field_path),
+    ...declinedFields,
+  ]));
   const existingPersonaNames = (pkb.personas ?? [])
     .map(p => `${p.name} (${p.type})`)
     .join(", ");
@@ -485,8 +494,21 @@ Synthesise the above into the required JSON format. The confidence score is ${co
       sample_pitch: undefined,
     };
 
-    // personas — full replacement
-    freshPkb.personas = personas.map((sp, i) => mapToPersona(sp, i));
+    // personas — replace, but PRESERVE user-set status/lifecycle by name (audit
+    // D1). A founder's "active"/"inactive" decision must survive re-synthesis.
+    const prevPersonaByName = new Map(
+      (freshPkb.personas ?? []).map(p => [p.name.toLowerCase().trim(), p]),
+    );
+    freshPkb.personas = personas.map((sp, i) => {
+      const mapped = mapToPersona(sp, i);
+      const prev = prevPersonaByName.get(sp.name.toLowerCase().trim());
+      if (prev && prev.status !== "candidate") {
+        mapped.status = prev.status;
+        mapped.lifecycle_status = prev.lifecycle_status;
+        mapped.persona_id = prev.persona_id;
+      }
+      return mapped;
+    });
 
     // gaps — archive old, replace current, carry forward do_not_ask
     if (!freshPkb.gaps) freshPkb.gaps = { current: [], history: [] };
@@ -502,28 +524,60 @@ Synthesise the above into the required JSON format. The confidence score is ${co
       }
     }
 
-    // Carry forward do_not_ask from old gaps by field_path (exact + fuzzy last-segment match)
-    const doNotAskPaths = new Set(
-      oldGaps.filter(g => g.do_not_ask).map(g => g.field_path),
-    );
-    const doNotAskLastSegments = new Set(
-      Array.from(doNotAskPaths).map(p => p.split(".").pop()!),
-    );
+    // Carry forward do_not_ask by EXACT field_path only (audit A4 — the old
+    // last-segment fuzzy match suppressed unrelated gaps sharing a leaf name).
+    const doNotAskPaths = new Set(oldGaps.filter(g => g.do_not_ask).map(g => g.field_path));
     for (const gap of allGaps) {
-      if (doNotAskPaths.has(gap.field_path)) {
-        gap.do_not_ask = true;
-      } else {
-        // Fuzzy: last segment match catches prefix variations (e.g. "pricing.tiers" vs "facts.pricing.tiers")
-        const lastSeg = gap.field_path.split(".").pop();
-        if (lastSeg && doNotAskLastSegments.has(lastSeg)) {
-          gap.do_not_ask = true;
-        }
-      }
+      if (doNotAskPaths.has(gap.field_path)) gap.do_not_ask = true;
     }
 
-    // Filter out do_not_ask gaps so they never surface in the UI
-    freshPkb.gaps.current = allGaps.filter(g => !g.do_not_ask);
+    // Build the set of populated/declined paths to enforce gap correctness in
+    // CODE (audit A1) — the LLM is only *asked* not to gap populated fields;
+    // here we guarantee it. Normalised to dot-notation, prefix-insensitive.
+    const norm = (p: string) => p.replace(/^facts\./, "").replace(/^extensions\.b2[bc]\./, "").toLowerCase();
+    const populatedNorm = new Set(populated.map(norm));
+    const declinedNorm = new Set([...skippedPaths].map(norm));
+
+    freshPkb.gaps.current = allGaps.filter(g => {
+      if (g.do_not_ask) return false;
+      const n = norm(g.field_path);
+      if (populatedNorm.has(n)) return false;   // false-positive: field already filled
+      if (declinedNorm.has(n)) return false;     // user declined / do-not-ask
+      return true;
+    });
+
+    // Preserve conflict-resolution gaps: re-derive them from unresolved
+    // conflicts so a synthesis pass never wipes the "please resolve" prompt
+    // (audit A2). De-dupe against any LLM gap on the same path.
+    const unresolved = (freshPkb.conflicts ?? []).filter(c => c.resolution_status === "unresolved");
+    const presentPaths = new Set(freshPkb.gaps.current.map(g => g.field_path));
+    for (const c of unresolved) {
+      const gapId = `gap_conflict_${c.conflict_id}`;
+      if (freshPkb.gaps.current.some(g => g.gap_id === gapId)) continue;
+      if (presentPaths.has(c.field_path)) {
+        // Promote the existing path gap to critical instead of duplicating
+        const g = freshPkb.gaps.current.find(g => g.field_path === c.field_path)!;
+        g.severity = "critical";
+        continue;
+      }
+      freshPkb.gaps.current.push({
+        gap_id: gapId,
+        field_path: c.field_path,
+        severity: "critical",
+        question: `There's conflicting information about ${c.field_path.split(".").pop()}. Which value is correct?`,
+        why_needed: "Conflicting information needs human resolution",
+      });
+    }
   });
+
+  // ── Populate review inbox (sensitive fields, conflicts, persona/ICP) ───────
+  // Audit S4/S5: previously never called, so the inbox stayed permanently empty.
+  try {
+    const freshPkb = await loadPKB(productId);
+    if (freshPkb) await populateInbox(productId, freshPkb);
+  } catch (err) {
+    console.error(`[synthesizer] inbox population failed for product ${productId}:`, err);
+  }
 
   // ── Write to DB ────────────────────────────────────────────────────────────
   try {

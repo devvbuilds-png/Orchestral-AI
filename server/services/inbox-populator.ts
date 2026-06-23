@@ -126,7 +126,10 @@ export async function populateInbox(sessionId: string, pkb: PKB): Promise<PKB> {
   // 3. Persona confirmation ---------------------------------------------------
   for (const persona of pkb.personas ?? []) {
     if (
-      persona.status === "active" &&
+      // Synthesizer creates personas as "candidate" — those are exactly the
+      // ones needing confirmation (audit S4: predicate previously required
+      // "active", which the synthesizer never emits, so this never fired).
+      (persona.status === "candidate" || persona.status === "active") &&
       persona.lifecycle_status === "inferred" &&
       !unresolvedByPersonaId.has(persona.persona_id)
     ) {

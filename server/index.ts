@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { Pool } from "pg";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -14,6 +16,30 @@ const httpServer = createServer(app);
 // Railway terminates TLS at the proxy. Trust it so secure session cookies
 // are correctly issued after OAuth redirects in production.
 app.set("trust proxy", 1);
+
+// ── Security headers + rate limiting (audit S9) ──────────────────────────────
+// CSP is disabled because the public portfolio pages use inline <style>/SVG and
+// the Vite client injects inline scripts; the other hardening headers stay on.
+app.use(helmet({ contentSecurityPolicy: false }));
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 600,                     // generous per-IP ceiling for normal API use
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many requests — slow down a moment." },
+});
+// Tighter ceiling on the expensive LLM / ingestion / import endpoints.
+const heavyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 80,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "You're doing that a lot — please wait a few minutes." },
+});
+const HEAVY_ROUTE_RE = /\/(chat|explain|process|extract|import|crawl-website|synthesize-profile|sources|recheck-gaps|fill-gaps)\b/;
+app.use("/api", apiLimiter);
+app.use("/api", (req, res, next) => (HEAVY_ROUTE_RE.test(req.path) ? heavyLimiter(req, res, next) : next()));
 
 declare module "http" {
   interface IncomingMessage {
@@ -31,6 +57,14 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// ── Session secret — must be set in production (audit S3) ────────────────────
+// A hardcoded fallback secret means anyone can forge session cookies. Fail fast
+// in production rather than silently shipping a forgeable session.
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET must be set in production — refusing to start with a default secret.");
+}
+const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
+
 // ── Session store (Postgres) ─────────────────────────────────────────────────
 const PgStore = connectPgSimple(session);
 const pgPool = new Pool({
@@ -45,7 +79,7 @@ app.use(
       pool: pgPool,
       createTableIfMissing: true,
     }),
-    secret: process.env.SESSION_SECRET || "dev-secret-change-in-production",
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -120,8 +154,11 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      // Audit S8: do not dump full response bodies (they contain PKB content,
+      // emails, etc.). Only surface error payloads, and cap their length.
+      if (capturedJsonResponse && res.statusCode >= 400) {
+        const body = JSON.stringify(capturedJsonResponse);
+        logLine += ` :: ${body.length > 200 ? body.slice(0, 200) + "…" : body}`;
       }
 
       log(logLine);
@@ -166,7 +203,9 @@ app.use((req, res, next) => {
     {
       port,
       host: "0.0.0.0",
-      reusePort: true,
+      // reusePort is Linux-only; on macOS/Windows it throws ENOTSUP and breaks
+      // local `npm run dev`. Enable it only where it's supported.
+      reusePort: process.platform === "linux",
     },
     () => {
       log(`serving on port ${port}`);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, Zap, ArrowRight, ChevronDown, Bell, LogOut, User } from "lucide-react";
+import { Plus, Zap, ArrowRight, ChevronDown, Bell, LogOut, User, Github } from "lucide-react";
 import KaizenMark from "@/components/KaizenMark";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import MinimalModeToggle from "@/components/MinimalModeToggle";
 import { useMinimalMode } from "@/contexts/MinimalModeContext";
 import ReviewQueuePanel from "@/components/review-inbox";
 import AddProductModal from "@/components/AddProductModal";
+import GithubImportModal from "@/components/github-import-modal";
 import DashboardTutorial, { type DashboardTutorialStep } from "@/components/dashboard-tutorial";
 import OrgSetup from "@/pages/OrgSetup";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -65,6 +66,7 @@ const Dashboard = () => {
   const [ciMode, setCiMode] = useState<"guide" | "knowledge">("guide");
   const [orgReviewOpen, setOrgReviewOpen] = useState(false);
   const [addProductOpen, setAddProductOpen] = useState(false);
+  const [ghImportOpen, setGhImportOpen] = useState(false);
   const [editOrgOpen, setEditOrgOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [tutorialReady, setTutorialReady] = useState(false);
@@ -504,6 +506,15 @@ const Dashboard = () => {
                 )}
               </button>
               <Button
+                variant="outline"
+                onClick={() => setGhImportOpen(true)}
+                className="gap-1.5 rounded-xl font-semibold text-sm h-9 px-4"
+                title="Import repositories from GitHub"
+              >
+                <Github className="h-3.5 w-3.5" />
+                GitHub
+              </Button>
+              <Button
                 ref={addProductButtonRef}
                 onClick={() => setAddProductOpen(true)}
                 className="gap-1.5 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm h-9 px-4"
@@ -577,6 +588,12 @@ const Dashboard = () => {
         open={addProductOpen}
         onClose={() => setAddProductOpen(false)}
         orgId={orgId}
+      />
+      <GithubImportModal
+        open={ghImportOpen}
+        onClose={() => setGhImportOpen(false)}
+        orgId={orgId}
+        context="organisation"
       />
       {editOrgOpen && org && (
         <OrgSetup

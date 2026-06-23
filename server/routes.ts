@@ -8,6 +8,8 @@ import { db } from "./db";
 import { products, productMembers, conversations, messages, organisations, organisationMembers } from "@shared/schema";
 import { storage } from "./storage";
 import { requireAuth } from "./auth";
+import { requireProductAccess, requireOrgAccess } from "./authz";
+import { registerCreatorRoutes } from "./creator-routes";
 import { supabase, UPLOADS_BUCKET } from "./supabase-storage";
 
 import {
@@ -225,6 +227,14 @@ export async function registerRoutes(
   // /api/auth/me is registered in index.ts before this function and is exempt.
   app.use("/api", requireAuth);
 
+  // Authorization (audit S1): any route addressing a specific product or org
+  // must prove membership. Mounted on the parameterised prefix so it covers
+  // every sub-route (upload, process, chat, inbox, portfolio, …) at once.
+  // The bare collection routes (GET/POST /api/products, /api/organisations)
+  // have no :id param and are intentionally not gated here.
+  app.use("/api/products/:productId", requireProductAccess);
+  app.use("/api/organisations/:orgId", requireOrgAccess);
+
   // ============================================================
   // V2 PRODUCT-SCOPED ROUTES
   // ============================================================
@@ -273,6 +283,16 @@ export async function registerRoutes(
       }
       const { name, orgId } = parsed.data;
       const userId = req.user!.id;
+
+      // Authz (S1): can only create products in an org you belong to.
+      const [orgMembership] = await db
+        .select({ id: organisationMembers.id })
+        .from(organisationMembers)
+        .where(and(eq(organisationMembers.org_id, orgId), eq(organisationMembers.user_id, userId)))
+        .limit(1);
+      if (!orgMembership) {
+        return res.status(403).json({ error: "You do not have access to this organisation" });
+      }
 
       const [product] = await db
         .insert(products)
@@ -897,12 +917,12 @@ export async function registerRoutes(
 
         // Load conversation history for multi-turn context
         const convIdIntForHistory = parseInt(conversationId);
-        const historyRows = await db
-          .select({ role: messages.role, content: messages.content })
+        const historyRows = (await db
+          .select({ role: messages.role, content: messages.content, id: messages.id })
           .from(messages)
           .where(eq(messages.conversation_id, convIdIntForHistory))
-          .orderBy(messages.created_at)
-          .limit(20);
+          .orderBy(desc(messages.id))   // most-recent first (audit S2: was loading the OLDEST 20)
+          .limit(20)).reverse();        // back to chronological for the LLM
         const conversationHistory = buildConversationHistory(historyRows);
 
         // Normalise empty message to the SESSION_START sentinel so the LLM
@@ -1005,12 +1025,12 @@ export async function registerRoutes(
 
         // Load conversation history for multi-turn context
         const explainConvIdForHistory = parseInt(conversationId);
-        const explainHistoryRows = await db
-          .select({ role: messages.role, content: messages.content })
+        const explainHistoryRows = (await db
+          .select({ role: messages.role, content: messages.content, id: messages.id })
           .from(messages)
           .where(eq(messages.conversation_id, explainConvIdForHistory))
-          .orderBy(messages.created_at)
-          .limit(20);
+          .orderBy(desc(messages.id))   // most-recent first (audit S2)
+          .limit(20)).reverse();
         const explainHistory = buildConversationHistory(explainHistoryRows);
 
         // Collect full response while streaming so we can persist it afterwards
@@ -1069,18 +1089,11 @@ export async function registerRoutes(
 
       if (answers && answers.length > 0) {
         await modifyPKB(productId, (freshPkb) => {
+          const getNested = (obj: any, path: string): any =>
+            path.split(".").reduce((cur, k) => (cur == null ? cur : cur[k]), obj);
+
           for (const { field_path, answer } of answers) {
             const normalized = normalizeFieldPath(field_path);
-            const fact = {
-              value: answer,
-              sources: [{
-                source_type: "founder" as const,
-                source_ref: "gap_fill",
-                captured_at: new Date().toISOString(),
-                evidence: answer,
-              }],
-              quality_tag: "ok" as const,
-            };
             // Route to the correct PKB section based on the original path
             const lowerPath = field_path.trim().toLowerCase();
             let targetObj: any;
@@ -1093,9 +1106,30 @@ export async function registerRoutes(
               if (!freshPkb.extensions.b2c) freshPkb.extensions.b2c = {};
               targetObj = freshPkb.extensions.b2c;
             } else {
+              if (!freshPkb.facts) freshPkb.facts = {};
               targetObj = freshPkb.facts;
             }
-            setNestedValue(targetObj, normalized, fact);
+            const source = {
+              source_type: "founder" as const,
+              source_ref: "gap_fill",
+              captured_at: new Date().toISOString(),
+              evidence: answer,
+            };
+            // If the target already holds an array value, append rather than
+            // clobber the whole array with a scalar (audit A7).
+            const existing = getNested(targetObj, normalized);
+            if (existing && typeof existing === "object" && Array.isArray(existing.value)) {
+              if (!existing.value.includes(answer)) existing.value.push(answer);
+              if (!existing.sources) existing.sources = [];
+              existing.sources.push(source);
+            } else {
+              setNestedValue(targetObj, normalized, {
+                value: answer,
+                sources: [source],
+                quality_tag: "ok" as const,
+                lifecycle_status: "asserted" as const,
+              });
+            }
           }
         });
       }
@@ -1463,6 +1497,10 @@ ${text.slice(0, 12000)}`; // cap to avoid token overflow
       }
     }
   );
+
+  // Vibe-coder (creator) routes: /api/creators, /api/organisations/:orgId/github/import,
+  // /synthesize-profile, /profile, and the PUBLIC /portfolio/:orgId pages.
+  registerCreatorRoutes(app);
 
   return httpServer;
 }

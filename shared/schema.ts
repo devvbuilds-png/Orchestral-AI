@@ -543,6 +543,12 @@ export const organisations = pgTable("organisations", {
   competitors: text("competitors").array(),
   business_model: text("business_model"),      // 'b2b' | 'b2c' | 'both'
   website_url: text("website_url"),
+  // Vibe-coder mode: an 'creator' workspace is a personal portfolio container.
+  // Defaults to 'organisation' so existing rows/flows are unaffected.
+  kind: text("kind").default("organisation"),  // 'organisation' | 'creator'
+  github_username: text("github_username"),
+  headline: text("headline"),                  // creator tagline / specialty
+  avatar_url: text("avatar_url"),
   created_at: timestamp("created_at").default(sql`now()`),
   updated_at: timestamp("updated_at").default(sql`now()`),
 });
@@ -598,6 +604,41 @@ export interface OrgConflict {
   resolved_at?: string;
 }
 
+// ── Creator (vibe-coder) profile — synthesized across all their projects ──────
+export interface CreatorSkillGroup {
+  label: string;            // e.g. "Frontend", "AI / ML", "DevOps"
+  items: string[];          // languages / frameworks / tools
+}
+
+export interface CreatorProjectConnection {
+  from_product_id: number;
+  to_product_id: number;
+  relationship: string;     // e.g. "shared stack", "evolution of", "companion tool"
+  rationale: string;
+}
+
+export interface CreatorSource {
+  id: string;
+  type: "resume" | "url" | "file";
+  ref: string;             // filename or URL
+  title?: string;
+  text: string;            // extracted text (capped)
+  added_at: string;
+}
+
+export interface CreatorProfile {
+  display_name: string;
+  headline: string;                 // one-line specialty, e.g. "Full-stack AI tinkerer"
+  bio: string;                      // 2-3 paragraph narrative — who they are, what they build
+  how_i_build: string;              // their style / approach, inferred from repos
+  specialties: string[];            // inferred themes
+  skill_groups: CreatorSkillGroup[];
+  featured_product_ids: number[];   // ranked "best" projects
+  connections: CreatorProjectConnection[];
+  social_links?: { label: string; url: string }[];
+  generated_at: string;
+}
+
 // Flat file-based JSON for org-level facts — mirrors organisations table fields
 export interface OrgPKB {
   org_id: number;
@@ -613,6 +654,12 @@ export interface OrgPKB {
   created_at: string;
   updated_at: string;
   conflicts: OrgConflict[];
+  // Vibe-coder mode (optional — only set for kind='creator' workspaces)
+  kind?: "organisation" | "creator";
+  github_username?: string;
+  avatar_url?: string;
+  creator_profile?: CreatorProfile;
+  creator_sources?: CreatorSource[];   // uploaded resume / sites about the builder
 }
 
 // ============================================================
@@ -627,6 +674,13 @@ export const products = pgTable("products", {
   product_type: text("product_type"),          // 'b2b' | 'b2c' | 'hybrid'
   state: text("state").default("product_type_selection"),
   confidence_score: integer("confidence_score").default(0),
+  // Vibe-coder mode: a product can be a GitHub project. All nullable/defaulted.
+  source: text("source").default("manual"),    // 'manual' | 'github'
+  repo_url: text("repo_url"),
+  homepage_url: text("homepage_url"),
+  primary_language: text("primary_language"),
+  stars: integer("stars").default(0),
+  topics: text("topics").array(),
   created_at: timestamp("created_at").default(sql`now()`),
   updated_at: timestamp("updated_at").default(sql`now()`),
 });

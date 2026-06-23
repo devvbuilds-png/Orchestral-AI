@@ -1,0 +1,490 @@
+import { useState, useRef, useEffect } from "react";
+import { Link } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Github, ExternalLink, RefreshCw, Sparkles, Star, ArrowUpRight, Layers,
+  LogOut, Loader2, Network, Code2, FileText, Link2, Trash2, FileUp,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import KaizenMark from "@/components/KaizenMark";
+import ParticleBackground from "@/components/particle-background";
+import ProjectGraph from "@/components/project-graph";
+import { useMinimalMode } from "@/contexts/MinimalModeContext";
+import type { CreatorProfile, Organisation, Product } from "@shared/schema";
+
+interface SourceMeta { id: string; type: string; ref: string; title?: string; added_at: string; }
+interface ProfileResponse {
+  profile: CreatorProfile | null;
+  projects: Product[];
+  github_username: string | null;
+  avatar_url: string | null;
+  sources: SourceMeta[];
+}
+
+const CreatorDashboard = () => {
+  const { minimal } = useMinimalMode();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const autoImportTried = useRef(false);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState("");
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
+  const [ghInput, setGhInput] = useState("");
+  const [tokenInput, setTokenInput] = useState("");
+  const [synthing, setSynthing] = useState(false);
+  const [showConnect, setShowConnect] = useState(false);
+  const [srcUrl, setSrcUrl] = useState("");
+  const [srcBusy, setSrcBusy] = useState(false);
+  const [srcMsg, setSrcMsg] = useState("");
+  const [connView, setConnView] = useState<"graph" | "list">("graph");
+  const resumeInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: orgData } = useQuery<{ organisation: Organisation | null }>({
+    queryKey: ["/api/organisations"],
+    queryFn: async () => {
+      const res = await fetch("/api/organisations", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load");
+      return res.json();
+    },
+  });
+  const orgId = orgData?.organisation?.id;
+
+  const { data, isLoading } = useQuery<ProfileResponse>({
+    queryKey: [`/api/organisations/${orgId}/profile`],
+    queryFn: async () => {
+      const res = await fetch(`/api/organisations/${orgId}/profile`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load profile");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
+
+  const profile = data?.profile ?? null;
+  const projects = data?.projects ?? [];
+  const projectById = new Map(projects.map((p) => [p.id, p]));
+  const featuredIds = new Set(profile?.featured_product_ids ?? []);
+  const featured = (profile?.featured_product_ids ?? []).map((id) => projectById.get(id)).filter(Boolean) as Product[];
+  const rest = projects.filter((p) => !featuredIds.has(p.id));
+
+  const refreshProfile = () => {
+    queryClient.invalidateQueries({ queryKey: [`/api/organisations/${orgId}/profile`] });
+    queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+  };
+
+  // Seamless onboarding: if the creator gave a GitHub username at setup and has
+  // no projects yet, kick off the import automatically (once) so they don't land
+  // on an empty screen wondering what to do next.
+  useEffect(() => {
+    if (autoImportTried.current) return;
+    if (!orgId || !data) return;
+    if (data.github_username && data.projects.length === 0 && !data.profile && !importing) {
+      autoImportTried.current = true;
+      runImport(data.github_username);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, data]);
+
+  const runImport = async (usernameArg?: string) => {
+    if (!orgId) return;
+    const username = (usernameArg ?? ghInput ?? data?.github_username ?? "").trim();
+    if (!username) { setImportMsg("Enter a GitHub username first."); return; }
+    setImporting(true);
+    setImportProgress(null);
+    setImportMsg(`Connecting to GitHub @${username}…`);
+    let fatal: string | null = null;
+    let importedCount: number | null = null;
+    try {
+      const res = await fetch(`/api/organisations/${orgId}/github/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, token: tokenInput.trim() || undefined }),
+        credentials: "include",
+      });
+      if (!res.ok || !res.body) {
+        const j = await res.json().catch(() => ({}));
+        fatal = j.error || "Couldn't start the import.";
+      } else {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const evt = JSON.parse(line.slice(6));
+              if (evt.type === "status") setImportMsg(evt.message);
+              if (evt.type === "progress") { setImportProgress({ current: evt.current, total: evt.total }); setImportMsg(`Importing ${evt.repo}…`); }
+              if (evt.type === "fatal") fatal = evt.error;
+              if (evt.type === "done") importedCount = evt.imported;
+            } catch { /* skip */ }
+          }
+        }
+      }
+    } catch {
+      fatal = "The import failed unexpectedly.";
+    } finally {
+      setImporting(false);
+      setImportProgress(null);
+    }
+
+    if (fatal) {
+      setImportMsg(fatal);
+      toast({ title: "GitHub import failed", description: fatal, variant: "destructive" });
+    } else {
+      refreshProfile();
+      setShowConnect(false);
+      const n = importedCount ?? 0;
+      setImportMsg(n > 0 ? `Imported ${n} project${n === 1 ? "" : "s"}.` : "Nothing new to import.");
+      toast({ title: n > 0 ? "Portfolio updated" : "All caught up", description: n > 0 ? `Imported ${n} project${n === 1 ? "" : "s"} and built your profile.` : "No new repositories to import." });
+    }
+  };
+
+  const uploadResume = async (file: File) => {
+    if (!orgId) return;
+    setSrcBusy(true); setSrcMsg(`Reading ${file.name}…`);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/organisations/${orgId}/sources/upload`, { method: "POST", body: form, credentials: "include" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setSrcMsg(j.error || "Could not add that file."); toast({ title: "Couldn't add file", description: j.error || "Try a PDF, DOCX, TXT or MD.", variant: "destructive" }); return; }
+      setSrcMsg(`Added ${file.name}. Regenerate your profile to use it.`);
+      toast({ title: "Source added", description: `${file.name} — hit Generate profile to fold it in.` });
+      refreshProfile();
+    } catch { setSrcMsg("Upload failed."); }
+    finally { setSrcBusy(false); }
+  };
+
+  const addUrlSource = async () => {
+    if (!orgId || !srcUrl.trim()) return;
+    setSrcBusy(true); setSrcMsg("Fetching site…");
+    try {
+      const res = await fetch(`/api/organisations/${orgId}/sources/url`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: srcUrl.trim() }), credentials: "include",
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setSrcMsg(j.error || "Could not fetch that URL."); toast({ title: "Couldn't fetch site", description: j.error || "Check the URL and try again.", variant: "destructive" }); return; }
+      setSrcUrl(""); setSrcMsg("Added. Regenerate your profile to use it.");
+      toast({ title: "Site added", description: "Hit Generate profile to fold it in." });
+      refreshProfile();
+    } catch { setSrcMsg("Fetch failed."); }
+    finally { setSrcBusy(false); }
+  };
+
+  const deleteSource = async (id: string) => {
+    if (!orgId) return;
+    await fetch(`/api/organisations/${orgId}/sources/${id}`, { method: "DELETE", credentials: "include" });
+    refreshProfile();
+  };
+
+  const regenerate = async () => {
+    if (!orgId) return;
+    setSynthing(true);
+    try {
+      const res = await fetch(`/api/organisations/${orgId}/synthesize-profile`, { method: "POST", credentials: "include" });
+      if (res.ok) {
+        refreshProfile();
+        toast({ title: "Profile regenerated", description: "Your bio, skills and connections were refreshed." });
+      } else {
+        const j = await res.json().catch(() => ({}));
+        toast({ title: "Couldn't regenerate", description: j.error || "Add some projects or sources first.", variant: "destructive" });
+      }
+    } finally {
+      setSynthing(false);
+    }
+  };
+
+  if (isLoading || !orgId) {
+    return (
+      <div className="fixed inset-0 outer-frame flex items-center justify-center">
+        <Loader2 className="h-6 w-6 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen outer-frame relative">
+      {!minimal && <ParticleBackground />}
+      <div className="relative z-10 max-w-5xl mx-auto px-6 py-10">
+        {/* Top bar */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-2">
+            <KaizenMark className="h-5 w-5" />
+            <span className="font-heading font-bold text-foreground">Kaizen</span>
+            <span className="text-xs font-medium text-primary bg-primary/10 ring-1 ring-primary/25 rounded-full px-2 py-0.5 ml-1">Vibe Coder</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <a href="/auth/logout" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+              <LogOut className="h-4 w-4" /> Logout
+            </a>
+          </div>
+        </div>
+
+        {/* Profile header */}
+        <div className="surface-card rounded-2xl p-7 mb-6">
+          <div className="flex items-start gap-5 flex-wrap">
+            {data?.avatar_url ? (
+              <img src={data.avatar_url} alt="" className="h-20 w-20 rounded-2xl ring-2 ring-primary/40 object-cover" />
+            ) : (
+              <div className="h-20 w-20 rounded-2xl bg-primary/15 ring-1 ring-primary/30 flex items-center justify-center">
+                <Code2 className="h-8 w-8 text-primary" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <h1 className="font-heading text-2xl font-bold text-foreground">{profile?.display_name || orgData?.organisation?.name}</h1>
+              {profile?.headline && <p className="text-muted-foreground mt-1">{profile.headline}</p>}
+              <div className="flex flex-wrap gap-2 mt-3">
+                {(profile?.specialties ?? []).map((s) => (
+                  <span key={s} className="text-[11px] font-medium text-primary bg-primary/10 ring-1 ring-primary/25 rounded-full px-2.5 py-1">{s}</span>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 shrink-0">
+              {profile && (
+                <a href={`/portfolio/${orgId}`} target="_blank" rel="noopener noreferrer">
+                  <Button className="gap-2 bg-primary hover:bg-primary/90 rounded-xl w-full"><ExternalLink className="h-4 w-4" /> View portfolio</Button>
+                </a>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowConnect((v) => !v)} className="gap-2 rounded-xl flex-1"><Github className="h-4 w-4" /> Import</Button>
+                {(projects.length > 0 || (data?.sources?.length ?? 0) > 0) && (
+                  <Button variant="outline" onClick={regenerate} disabled={synthing} className="gap-2 rounded-xl"
+                    aria-label={profile ? "Regenerate profile" : "Generate profile"}
+                    title="Build your profile from your latest projects & sources">
+                    {synthing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {!profile && <span>Generate profile</span>}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* GitHub connect panel */}
+          {(showConnect || projects.length === 0) && (
+            <div className="mt-6 border-t border-border/60 pt-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Github className="h-4 w-4 text-foreground" />
+                <span className="font-semibold text-sm">Connect GitHub</span>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <Input value={ghInput} onChange={(e) => setGhInput(e.target.value)} placeholder={data?.github_username || "github username"} className="h-10 rounded-xl flex-1 min-w-[160px]" disabled={importing} />
+                <Input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} placeholder="token (optional, higher rate limit)" type="password" className="h-10 rounded-xl flex-1 min-w-[160px]" disabled={importing} />
+                <Button onClick={() => runImport()} disabled={importing} className="gap-2 bg-primary hover:bg-primary/90 rounded-xl">
+                  {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpRight className="h-4 w-4" />} Import repos
+                </Button>
+              </div>
+              {importMsg && (
+                <div className="mt-3">
+                  <div className="text-sm text-muted-foreground flex items-center gap-2">
+                    {importing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    <span>{importMsg}</span>
+                    {importProgress && <span className="text-xs">({importProgress.current}/{importProgress.total})</span>}
+                  </div>
+                  {importProgress && importProgress.total > 0 && (
+                    <div className="mt-2 h-1.5 w-full rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full bg-primary transition-all duration-300" style={{ width: `${Math.round((importProgress.current / importProgress.total) * 100)}%` }} />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Sources — resume / personal sites */}
+        <div className="surface-card rounded-2xl p-6 mb-6">
+          <input
+            ref={resumeInputRef}
+            type="file"
+            accept=".pdf,.doc,.docx,.txt,.md"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadResume(f); e.target.value = ""; }}
+          />
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              <span className="font-heading font-bold text-foreground text-sm">Your story sources</span>
+              <span className="text-xs text-muted-foreground">resume, portfolio sites</span>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="gap-1.5 rounded-lg" disabled={srcBusy} onClick={() => resumeInputRef.current?.click()}>
+                <FileUp className="h-3.5 w-3.5" /> Upload resume
+              </Button>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={srcUrl}
+                onChange={(e) => setSrcUrl(e.target.value)}
+                placeholder="https://your-portfolio.com"
+                className="h-9 rounded-lg pl-8 text-sm"
+                disabled={srcBusy}
+                onKeyDown={(e) => e.key === "Enter" && addUrlSource()}
+              />
+            </div>
+            <Button size="sm" className="gap-1.5 rounded-lg bg-primary hover:bg-primary/90" disabled={srcBusy || !srcUrl.trim()} onClick={addUrlSource}>
+              {srcBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpRight className="h-3.5 w-3.5" />} Add site
+            </Button>
+          </div>
+          {srcMsg && <p className="text-xs text-muted-foreground mt-2">{srcMsg}</p>}
+          {(data?.sources ?? []).length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {data!.sources.map((s) => (
+                <span key={s.id} className="inline-flex items-center gap-1.5 text-xs bg-secondary/60 ring-1 ring-border/50 rounded-full pl-2.5 pr-1.5 py-1">
+                  {s.type === "url" ? <Link2 className="h-3 w-3 text-muted-foreground" /> : <FileText className="h-3 w-3 text-muted-foreground" />}
+                  <span className="max-w-[180px] truncate text-foreground">{s.title || s.ref}</span>
+                  <button onClick={() => deleteSource(s.id)} aria-label={`Remove ${s.title || s.ref}`} title="Remove source" className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Importing state — reassure the user while repos are processed */}
+        {projects.length === 0 && importing && (
+          <div className="surface-card rounded-2xl p-10 text-center">
+            <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto mb-4" />
+            <h3 className="font-heading text-lg font-bold text-foreground">Reading your repositories…</h3>
+            <p className="text-muted-foreground text-sm mt-2 max-w-md mx-auto">
+              Kaizen is understanding each project and building your profile. This can take a minute for larger accounts — hang tight.
+            </p>
+          </div>
+        )}
+
+        {/* Bio */}
+        {profile?.bio && (
+          <div className="surface-card rounded-2xl p-7 mb-6">
+            <div className="text-xs font-bold uppercase tracking-wider text-primary mb-3">About</div>
+            <div className="prose prose-sm prose-invert max-w-none text-foreground/90 whitespace-pre-line leading-relaxed">{profile.bio}</div>
+            {profile.how_i_build && (
+              <div className="mt-5 pt-5 border-t border-border/60">
+                <div className="text-xs font-bold uppercase tracking-wider text-primary mb-2">How I build</div>
+                <p className="text-sm text-muted-foreground leading-relaxed">{profile.how_i_build}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Skills */}
+        {profile && profile.skill_groups.length > 0 && (
+          <div className="surface-card rounded-2xl p-7 mb-6">
+            <div className="text-xs font-bold uppercase tracking-wider text-primary mb-4">Toolbox</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+              {profile.skill_groups.map((g) => (
+                <div key={g.label}>
+                  <div className="font-heading font-semibold text-sm text-foreground mb-2">{g.label}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {g.items.map((i) => (
+                      <span key={i} className="text-[11px] font-medium text-muted-foreground bg-secondary/60 ring-1 ring-border/50 rounded-full px-2 py-0.5">{i}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Featured */}
+        {featured.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <h2 className="font-heading text-lg font-bold text-foreground">Featured projects</h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {featured.map((p) => <ProjectCard key={p.id} p={p} orgId={orgId} featured />)}
+            </div>
+          </div>
+        )}
+
+        {/* All projects */}
+        {rest.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Layers className="h-4 w-4 text-muted-foreground" />
+              <h2 className="font-heading text-lg font-bold text-foreground">{featured.length > 0 ? "More projects" : "Projects"}</h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {rest.map((p) => <ProjectCard key={p.id} p={p} orgId={orgId} />)}
+            </div>
+          </div>
+        )}
+
+        {/* Connections — knowledge graph + list */}
+        {profile && profile.connections.length > 0 && (
+          <div className="surface-card rounded-2xl p-7 mb-6">
+            <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Network className="h-4 w-4 text-primary" />
+                <h2 className="font-heading text-lg font-bold text-foreground">How the work connects</h2>
+              </div>
+              <div className="flex items-center gap-0.5 rounded-lg bg-secondary/60 p-0.5 ring-1 ring-border/50">
+                {(["graph", "list"] as const).map((v) => (
+                  <button key={v} onClick={() => setConnView(v)}
+                    className={`rounded-md px-3 py-1 text-xs font-bold capitalize transition-all ${connView === v ? "bg-primary/15 text-primary ring-1 ring-primary/30" : "text-muted-foreground hover:text-foreground"}`}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {connView === "graph" ? (
+              <ProjectGraph projects={projects} connections={profile.connections} featuredIds={featuredIds} orgId={orgId} />
+            ) : (
+              <div className="space-y-3">
+                {profile.connections.map((c, i) => {
+                  const a = projectById.get(c.from_product_id)?.name ?? `#${c.from_product_id}`;
+                  const b = projectById.get(c.to_product_id)?.name ?? `#${c.to_product_id}`;
+                  return (
+                    <div key={i} className="border-l-2 border-primary pl-4 py-1">
+                      <div className="text-sm font-semibold text-foreground">{a} <span className="text-primary">↔</span> {b} <span className="text-primary text-xs">· {c.relationship}</span></div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{c.rationale}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+function ProjectCard({ p, orgId, featured }: { p: Product; orgId: number; featured?: boolean }) {
+  const lang = (p as any).primary_language as string | null;
+  const stars = (p as any).stars ?? 0;
+  const topics = (((p as any).topics ?? []) as string[]).slice(0, 3);
+  const home = (p as any).homepage_url as string | null;
+  const repo = (p as any).repo_url as string | null;
+  return (
+    <div className={`surface-card rounded-2xl p-5 flex flex-col gap-3 ${featured ? "ring-1 ring-primary/20" : ""}`}>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-heading font-bold text-foreground">{p.name}</h3>
+        {stars > 0 && <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Star className="h-3 w-3" />{stars}</span>}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {lang && <span className="text-[10px] font-semibold text-primary bg-primary/10 rounded-full px-2 py-0.5">{lang}</span>}
+        {topics.map((t) => <span key={t} className="text-[10px] font-medium text-muted-foreground bg-secondary/60 rounded-full px-2 py-0.5">{t}</span>)}
+      </div>
+      <div className="flex items-center gap-3 text-xs font-semibold mt-auto pt-2">
+        <Link href={`/products/${p.id}`} className="text-foreground hover:text-primary">Manage →</Link>
+        <a href={`/portfolio/${orgId}/p/${p.id}`} target="_blank" rel="noopener noreferrer" className="text-primary inline-flex items-center gap-1">Page <ExternalLink className="h-3 w-3" /></a>
+        {home && <a href={home} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">Live ↗</a>}
+        {repo && <a href={repo} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">Code ↗</a>}
+      </div>
+    </div>
+  );
+}
+
+export default CreatorDashboard;

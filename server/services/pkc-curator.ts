@@ -83,6 +83,13 @@ async function detectOrgConflict(
   }
 }
 
+// V1 governance: sensitive field paths are flagged on write so the review inbox
+// can require approval and the Explainer can withhold them until approved.
+const SENSITIVE_PATH_RE = /(pricing|customer_name|customer_names|security|security_claims|roadmap|compliance)/i;
+function isSensitivePath(fieldPath: string): boolean {
+  return SENSITIVE_PATH_RE.test(fieldPath);
+}
+
 const VALID_SECTIONS = ["facts", "extensions.b2b", "extensions.b2c", "derived_insights", "gaps"];
 const AGENTS_REQUIRING_SOURCES = ["extractor", "interviewer"];
 const WRITE_PERMISSIONS: Record<string, string[]> = {
@@ -110,10 +117,18 @@ function setNestedValue(obj: any, path: string, value: any): void {
   current[lastKey] = value;
 }
 
+function unwrap(v: any): any {
+  return (typeof v === "object" && v !== null && "value" in v) ? v.value : v;
+}
+
 function valuesConflict(oldValue: any, newValue: any): boolean {
-  // Unwrap FactField wrappers — stored values are {value, sources, ...}, incoming may be raw
-  const oldVal = (typeof oldValue === "object" && oldValue !== null && "value" in oldValue) ? oldValue.value : oldValue;
-  const newVal = (typeof newValue === "object" && newValue !== null && "value" in newValue) ? newValue.value : newValue;
+  const oldVal = unwrap(oldValue);
+  const newVal = unwrap(newValue);
+
+  // Arrays are additive, not conflicting — re-ingesting a second document that
+  // mentions more features/use-cases/etc. should MERGE, never raise a conflict
+  // (audit A3). Conflict detection is reserved for scalar disagreements.
+  if (Array.isArray(oldVal) || Array.isArray(newVal)) return false;
 
   if (typeof oldVal !== typeof newVal) return true;
 
@@ -122,6 +137,19 @@ function valuesConflict(oldValue: any, newValue: any): boolean {
   }
 
   return oldVal !== newVal;
+}
+
+/** Union-merge two array values, de-duplicating by JSON identity. */
+function mergeArrays(oldVal: any, newVal: any): any[] {
+  const a = Array.isArray(oldVal) ? oldVal : (oldVal == null ? [] : [oldVal]);
+  const b = Array.isArray(newVal) ? newVal : (newVal == null ? [] : [newVal]);
+  const seen = new Set(a.map((v: any) => (typeof v === "object" ? JSON.stringify(v) : String(v))));
+  const out = [...a];
+  for (const item of b) {
+    const key = typeof item === "object" ? JSON.stringify(item) : String(item);
+    if (!seen.has(key)) { out.push(item); seen.add(key); }
+  }
+  return out;
 }
 
 export function validateProposedUpdate(pkb: PKB, update: ProposedUpdate): PKCDecision {
@@ -205,16 +233,23 @@ function applyUpdateToPKB(pkb: PKB, update: ProposedUpdate): PKCDecision {
   const existingValue = getNestedValue(targetObj, relativePath);
 
   if (update.target_section === "facts" || update.target_section.startsWith("extensions.")) {
+    const incomingVal = (update.value && typeof update.value === "object" && "value" in update.value)
+      ? update.value.value : update.value;
+
+    // ── Array merge: union new items into the existing array (audit A3) ──────
+    if (existingValue && (Array.isArray(unwrap(existingValue)) || Array.isArray(incomingVal))) {
+      if (!existingValue.sources) existingValue.sources = [];
+      existingValue.value = mergeArrays(unwrap(existingValue), incomingVal);
+      mergeSourcesInto(existingValue, update.sources);
+      existingValue.lifecycle_status = computeLifecycle(existingValue);
+      return { accepted: true };
+    }
+
     if (existingValue && !valuesConflict(existingValue, update.value)) {
-      // Values match — merge sources and skip (no conflict, no overwrite)
-      if (update.sources && existingValue.sources) {
-        for (const src of update.sources) {
-          const isDup = existingValue.sources.some((s: any) =>
-            s.source_ref === src.source_ref && s.source_type === src.source_type
-          );
-          if (!isDup) existingValue.sources.push(src);
-        }
-      }
+      // Scalar values match — merge sources; a second DISTINCT source upgrades
+      // the fact to "evidenced" (V1 governance rule), audit C4.
+      mergeSourcesInto(existingValue, update.sources);
+      existingValue.lifecycle_status = computeLifecycle(existingValue);
       return { accepted: true };
     }
 
@@ -253,11 +288,16 @@ function applyUpdateToPKB(pkb: PKB, update: ProposedUpdate): PKCDecision {
       };
     }
 
+    const sensitive = isSensitivePath(update.field_path);
     const factField: FactField = {
-      value: update.value.value ?? update.value,
+      value: incomingVal,
       sources: update.sources || [],
       quality_tag: determineQualityTag(update.sources || []),
-      notes: update.value.notes,
+      lifecycle_status: "asserted",
+      // Sensitive facts are committed but flagged unapproved so the inbox gates
+      // them and the Explainer can withhold until a human approves (V1 gov).
+      ...(sensitive ? { sensitive: true, approved: false } : {}),
+      notes: (update.value && typeof update.value === "object") ? update.value.notes : undefined,
     };
 
     setNestedValue(targetObj, relativePath, factField);
@@ -330,6 +370,31 @@ export async function batchApplyUpdates(productId: string, updates: ProposedUpda
   }
 
   return decisions;
+}
+
+/** Merge sources into a FactField, de-duplicating by (source_ref, source_type). */
+function mergeSourcesInto(field: any, incoming?: Source[]): void {
+  if (!incoming) return;
+  if (!field.sources) field.sources = [];
+  for (const src of incoming) {
+    const isDup = field.sources.some(
+      (s: any) => s.source_ref === src.source_ref && s.source_type === src.source_type,
+    );
+    if (!isDup) field.sources.push(src);
+  }
+}
+
+/**
+ * Lifecycle per V1 governance: a fact is "evidenced" once a SECOND distinct
+ * source (different source_ref) confirms it; otherwise "asserted". Never
+ * downgrades an existing evidenced/disputed status.
+ */
+function computeLifecycle(field: any): FactField["lifecycle_status"] {
+  if (field.lifecycle_status === "disputed" || field.lifecycle_status === "stale") {
+    return field.lifecycle_status;
+  }
+  const refs = new Set((field.sources ?? []).map((s: any) => s.source_ref).filter(Boolean));
+  return refs.size >= 2 ? "evidenced" : "asserted";
 }
 
 function determineQualityTag(sources: Source[]): "strong" | "ok" | "weak" {
