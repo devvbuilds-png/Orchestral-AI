@@ -617,6 +617,15 @@ export interface CreatorProjectConnection {
   rationale: string;
 }
 
+export interface CreatorSource {
+  id: string;
+  type: "resume" | "url" | "file";
+  ref: string;             // filename or URL
+  title?: string;
+  text: string;            // extracted text (capped)
+  added_at: string;
+}
+
 export interface CreatorProfile {
   display_name: string;
   headline: string;                 // one-line specialty, e.g. "Full-stack AI tinkerer"
@@ -650,6 +659,7 @@ export interface OrgPKB {
   github_username?: string;
   avatar_url?: string;
   creator_profile?: CreatorProfile;
+  creator_sources?: CreatorSource[];   // uploaded resume / sites about the builder
 }
 
 // ============================================================

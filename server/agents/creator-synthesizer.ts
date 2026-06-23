@@ -57,8 +57,10 @@ export async function runCreatorSynthesizer(orgId: number): Promise<CreatorProfi
     .from(products)
     .where(eq(products.org_id, orgId));
 
-  if (rows.length === 0) {
-    console.log(`[creator-synth] org ${orgId} has no projects yet`);
+  const sources = orgPKB.creator_sources ?? [];
+
+  if (rows.length === 0 && sources.length === 0) {
+    console.log(`[creator-synth] org ${orgId} has no projects or sources yet`);
     return null;
   }
 
@@ -85,13 +87,19 @@ export async function runCreatorSynthesizer(orgId: number): Promise<CreatorProfi
 - Brief: ${d.brief || "(no brief yet)"}
 ${d.facts ? `- Knowledge:\n${d.facts}` : ""}`).join("\n\n");
 
+  // Uploaded materials (resume, personal sites) — strong signal for bio/skills.
+  const sourcesBlock = sources.length > 0
+    ? `\n\n## Uploaded materials about the builder (resume / sites — use for bio, skills, social links)\n` +
+      sources.map((s) => `### ${s.type.toUpperCase()}: ${s.title || s.ref}\n${s.text.slice(0, 4000)}`).join("\n\n")
+    : "";
+
   const userPrompt = `Developer: ${orgPKB.name || orgPKB.github_username || "this builder"}
 ${orgPKB.github_username ? `GitHub: @${orgPKB.github_username}` : ""}
 Projects (${digests.length}):
 
-${projectsBlock}
+${projectsBlock}${sourcesBlock}
 
-Synthesize the unified builder profile as JSON.`;
+Synthesize the unified builder profile as JSON. ${sources.length > 0 ? "Blend the GitHub projects with the uploaded resume/site materials — the resume is authoritative for background, role, and contact/social links." : ""}`;
 
   let raw: string;
   try {

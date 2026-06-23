@@ -1,22 +1,25 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Github, ExternalLink, RefreshCw, Sparkles, Star, ArrowUpRight, Layers,
-  LogOut, Loader2, Network, Code2,
+  LogOut, Loader2, Network, Code2, FileText, Link2, Trash2, FileUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import KaizenMark from "@/components/KaizenMark";
 import ParticleBackground from "@/components/particle-background";
+import ProjectGraph from "@/components/project-graph";
 import { useMinimalMode } from "@/contexts/MinimalModeContext";
 import type { CreatorProfile, Organisation, Product } from "@shared/schema";
 
+interface SourceMeta { id: string; type: string; ref: string; title?: string; added_at: string; }
 interface ProfileResponse {
   profile: CreatorProfile | null;
   projects: Product[];
   github_username: string | null;
   avatar_url: string | null;
+  sources: SourceMeta[];
 }
 
 const CreatorDashboard = () => {
@@ -29,6 +32,11 @@ const CreatorDashboard = () => {
   const [tokenInput, setTokenInput] = useState("");
   const [synthing, setSynthing] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
+  const [srcUrl, setSrcUrl] = useState("");
+  const [srcBusy, setSrcBusy] = useState(false);
+  const [srcMsg, setSrcMsg] = useState("");
+  const [connView, setConnView] = useState<"graph" | "list">("graph");
+  const resumeInputRef = useRef<HTMLInputElement>(null);
 
   const { data: orgData } = useQuery<{ organisation: Organisation | null }>({
     queryKey: ["/api/organisations"],
@@ -104,6 +112,43 @@ const CreatorDashboard = () => {
       setImporting(false);
       setImportProgress(null);
     }
+  };
+
+  const uploadResume = async (file: File) => {
+    if (!orgId) return;
+    setSrcBusy(true); setSrcMsg(`Reading ${file.name}…`);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/organisations/${orgId}/sources/upload`, { method: "POST", body: form, credentials: "include" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setSrcMsg(j.error || "Could not add that file."); return; }
+      setSrcMsg(`Added ${file.name}. Regenerate your profile to use it.`);
+      refreshProfile();
+    } catch { setSrcMsg("Upload failed."); }
+    finally { setSrcBusy(false); }
+  };
+
+  const addUrlSource = async () => {
+    if (!orgId || !srcUrl.trim()) return;
+    setSrcBusy(true); setSrcMsg("Fetching site…");
+    try {
+      const res = await fetch(`/api/organisations/${orgId}/sources/url`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: srcUrl.trim() }), credentials: "include",
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setSrcMsg(j.error || "Could not fetch that URL."); return; }
+      setSrcUrl(""); setSrcMsg("Added. Regenerate your profile to use it.");
+      refreshProfile();
+    } catch { setSrcMsg("Fetch failed."); }
+    finally { setSrcBusy(false); }
+  };
+
+  const deleteSource = async (id: string) => {
+    if (!orgId) return;
+    await fetch(`/api/organisations/${orgId}/sources/${id}`, { method: "DELETE", credentials: "include" });
+    refreshProfile();
   };
 
   const regenerate = async () => {
@@ -204,6 +249,57 @@ const CreatorDashboard = () => {
           )}
         </div>
 
+        {/* Sources — resume / personal sites */}
+        <div className="surface-card rounded-2xl p-6 mb-6">
+          <input
+            ref={resumeInputRef}
+            type="file"
+            accept=".pdf,.doc,.docx,.txt,.md"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadResume(f); e.target.value = ""; }}
+          />
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              <span className="font-heading font-bold text-foreground text-sm">Your story sources</span>
+              <span className="text-xs text-muted-foreground">resume, portfolio sites</span>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="gap-1.5 rounded-lg" disabled={srcBusy} onClick={() => resumeInputRef.current?.click()}>
+                <FileUp className="h-3.5 w-3.5" /> Upload resume
+              </Button>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={srcUrl}
+                onChange={(e) => setSrcUrl(e.target.value)}
+                placeholder="https://your-portfolio.com"
+                className="h-9 rounded-lg pl-8 text-sm"
+                disabled={srcBusy}
+                onKeyDown={(e) => e.key === "Enter" && addUrlSource()}
+              />
+            </div>
+            <Button size="sm" className="gap-1.5 rounded-lg bg-primary hover:bg-primary/90" disabled={srcBusy || !srcUrl.trim()} onClick={addUrlSource}>
+              {srcBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpRight className="h-3.5 w-3.5" />} Add site
+            </Button>
+          </div>
+          {srcMsg && <p className="text-xs text-muted-foreground mt-2">{srcMsg}</p>}
+          {(data?.sources ?? []).length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {data!.sources.map((s) => (
+                <span key={s.id} className="inline-flex items-center gap-1.5 text-xs bg-secondary/60 ring-1 ring-border/50 rounded-full pl-2.5 pr-1.5 py-1">
+                  {s.type === "url" ? <Link2 className="h-3 w-3 text-muted-foreground" /> : <FileText className="h-3 w-3 text-muted-foreground" />}
+                  <span className="max-w-[180px] truncate text-foreground">{s.title || s.ref}</span>
+                  <button onClick={() => deleteSource(s.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Empty state */}
         {projects.length === 0 && !importing && (
           <div className="surface-card rounded-2xl p-10 text-center">
@@ -277,25 +373,40 @@ const CreatorDashboard = () => {
           </div>
         )}
 
-        {/* Connections */}
+        {/* Connections — knowledge graph + list */}
         {profile && profile.connections.length > 0 && (
           <div className="surface-card rounded-2xl p-7 mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Network className="h-4 w-4 text-primary" />
-              <h2 className="font-heading text-lg font-bold text-foreground">How the work connects</h2>
+            <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Network className="h-4 w-4 text-primary" />
+                <h2 className="font-heading text-lg font-bold text-foreground">How the work connects</h2>
+              </div>
+              <div className="flex items-center gap-0.5 rounded-lg bg-secondary/60 p-0.5 ring-1 ring-border/50">
+                {(["graph", "list"] as const).map((v) => (
+                  <button key={v} onClick={() => setConnView(v)}
+                    className={`rounded-md px-3 py-1 text-xs font-bold capitalize transition-all ${connView === v ? "bg-primary/15 text-primary ring-1 ring-primary/30" : "text-muted-foreground hover:text-foreground"}`}>
+                    {v}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-3">
-              {profile.connections.map((c, i) => {
-                const a = projectById.get(c.from_product_id)?.name ?? `#${c.from_product_id}`;
-                const b = projectById.get(c.to_product_id)?.name ?? `#${c.to_product_id}`;
-                return (
-                  <div key={i} className="border-l-2 border-primary pl-4 py-1">
-                    <div className="text-sm font-semibold text-foreground">{a} <span className="text-primary">↔</span> {b} <span className="text-primary text-xs">· {c.relationship}</span></div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{c.rationale}</div>
-                  </div>
-                );
-              })}
-            </div>
+
+            {connView === "graph" ? (
+              <ProjectGraph projects={projects} connections={profile.connections} featuredIds={featuredIds} orgId={orgId} />
+            ) : (
+              <div className="space-y-3">
+                {profile.connections.map((c, i) => {
+                  const a = projectById.get(c.from_product_id)?.name ?? `#${c.from_product_id}`;
+                  const b = projectById.get(c.to_product_id)?.name ?? `#${c.to_product_id}`;
+                  return (
+                    <div key={i} className="border-l-2 border-primary pl-4 py-1">
+                      <div className="text-sm font-semibold text-foreground">{a} <span className="text-primary">↔</span> {b} <span className="text-primary text-xs">· {c.relationship}</span></div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{c.rationale}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,15 +1,21 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
+import multer from "multer";
+import os from "os";
+import path from "path";
+import fs from "fs";
+import { randomUUID } from "crypto";
 
 import { db } from "./db";
 import { products, productMembers, organisations, organisationMembers } from "@shared/schema";
 import { requireOrgAccess } from "./authz";
 import {
   initializePKB, loadPKB, initializeOrgPKB, loadOrgPKB, updateOrgPKBFields,
+  addCreatorSource, removeCreatorSource,
 } from "./services/pkb-storage";
 import { batchApplyUpdates } from "./services/pkc-curator";
-import { chunkText } from "./services/ingestion-service";
+import { chunkText, extractTextFromFile, fetchUrlContent, cleanText } from "./services/ingestion-service";
 import { extractFromMultipleChunks } from "./agents/information-extractor";
 import { runSynthesizer } from "./agents/synthesizer-function";
 import { runCreatorSynthesizer } from "./agents/creator-synthesizer";
@@ -30,6 +36,15 @@ const importSchema = z.object({
   token: z.string().optional(),
   maxRepos: z.number().min(1).max(30).optional().default(15),
 });
+
+const SOURCE_TEXT_CAP = 12000; // cap stored text per source to bound PKB size
+
+const sourceUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+});
+
+const sourceUrlSchema = z.object({ url: z.string().url() });
 
 function sse(res: Response) {
   res.setHeader("Content-Type", "text/event-stream");
@@ -198,10 +213,90 @@ export function registerCreatorRoutes(app: Express): void {
       const orgId = parseInt(req.params.orgId as string);
       const orgPKB = await loadOrgPKB(orgId);
       const rows = await db.select().from(products).where(eq(products.org_id, orgId));
-      res.json({ profile: orgPKB.creator_profile ?? null, projects: rows, github_username: orgPKB.github_username ?? null, avatar_url: orgPKB.avatar_url ?? null });
+      // Don't leak full source text to the client — just lightweight metadata.
+      const sources = (orgPKB.creator_sources ?? []).map((s) => ({
+        id: s.id, type: s.type, ref: s.ref, title: s.title, added_at: s.added_at,
+      }));
+      res.json({
+        profile: orgPKB.creator_profile ?? null,
+        projects: rows,
+        github_username: orgPKB.github_username ?? null,
+        avatar_url: orgPKB.avatar_url ?? null,
+        sources,
+      });
     } catch (err) {
       console.error("Get profile error:", err);
       res.status(500).json({ error: "Failed to load profile" });
+    }
+  });
+
+  // ── Upload a resume / document as a profile source ─────────────────────────
+  app.post("/api/organisations/:orgId/sources/upload", requireOrgAccess, sourceUpload.single("file"), async (req: Request, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.orgId as string);
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: "file is required" });
+
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9.\-]/g, "_");
+      const tmpPath = path.join(os.tmpdir(), `kaizen_src_${Date.now()}_${safeName}`);
+      fs.writeFileSync(tmpPath, file.buffer);
+      let text = "";
+      try { text = cleanText(await extractTextFromFile(tmpPath)); }
+      finally { try { fs.unlinkSync(tmpPath); } catch { /* ignore */ } }
+
+      if (!text.trim()) return res.status(400).json({ error: "Could not read any text from that file." });
+
+      const isResume = /resume|cv/i.test(file.originalname);
+      await addCreatorSource(orgId, {
+        id: randomUUID(),
+        type: isResume ? "resume" : "file",
+        ref: file.originalname,
+        title: file.originalname,
+        text: text.slice(0, SOURCE_TEXT_CAP),
+        added_at: new Date().toISOString(),
+      });
+      res.json({ success: true, ref: file.originalname, chars: text.length });
+    } catch (err) {
+      console.error("Source upload error:", err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Failed to add source" });
+    }
+  });
+
+  // ── Add a website / portfolio URL as a profile source ──────────────────────
+  app.post("/api/organisations/:orgId/sources/url", requireOrgAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.orgId as string);
+      const parsed = sourceUrlSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "A valid URL is required" });
+
+      const { text, title } = await fetchUrlContent(parsed.data.url);
+      const clean = cleanText(text);
+      if (!clean.trim()) return res.status(400).json({ error: "No readable content found at that URL." });
+
+      await addCreatorSource(orgId, {
+        id: randomUUID(),
+        type: "url",
+        ref: parsed.data.url,
+        title: title || parsed.data.url,
+        text: clean.slice(0, SOURCE_TEXT_CAP),
+        added_at: new Date().toISOString(),
+      });
+      res.json({ success: true, ref: parsed.data.url, title });
+    } catch (err) {
+      console.error("Source URL error:", err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Failed to fetch URL" });
+    }
+  });
+
+  // ── Remove a profile source ────────────────────────────────────────────────
+  app.delete("/api/organisations/:orgId/sources/:sourceId", requireOrgAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.orgId as string);
+      await removeCreatorSource(orgId, req.params.sourceId as string);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Remove source error:", err);
+      res.status(500).json({ error: "Failed to remove source" });
     }
   });
 

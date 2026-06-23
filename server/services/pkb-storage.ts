@@ -356,6 +356,26 @@ export async function updateOrgPKBFields(orgId: number, fields: Partial<OrgPKB>)
   });
 }
 
+export async function addCreatorSource(orgId: number, source: import("@shared/schema").CreatorSource): Promise<void> {
+  await withKeyLock(`org_${orgId}`, async () => {
+    const pkb = await loadOrgPKB(orgId);
+    if (!pkb.creator_sources) pkb.creator_sources = [];
+    pkb.creator_sources.push(source);
+    // Keep the most recent 20 sources to bound PKB size
+    if (pkb.creator_sources.length > 20) pkb.creator_sources = pkb.creator_sources.slice(-20);
+    await saveOrgPKB(orgId, pkb);
+  });
+}
+
+export async function removeCreatorSource(orgId: number, sourceId: string): Promise<void> {
+  await withKeyLock(`org_${orgId}`, async () => {
+    const pkb = await loadOrgPKB(orgId);
+    if (!pkb.creator_sources) return;
+    pkb.creator_sources = pkb.creator_sources.filter((s) => s.id !== sourceId);
+    await saveOrgPKB(orgId, pkb);
+  });
+}
+
 export async function addOrgConflict(orgId: number, conflict: OrgConflict): Promise<void> {
   await withKeyLock(`org_${orgId}`, async () => {
     const pkb = await loadOrgPKB(orgId);

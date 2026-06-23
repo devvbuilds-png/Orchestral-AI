@@ -130,6 +130,43 @@ function briefSnippet(s: string): string {
   return t.length > 180 ? t.slice(0, 177) + "…" : t;
 }
 
+/** Static, deterministic circular-layout SVG of project connections. */
+function buildConnectionsSVG(
+  connections: CreatorProfile["connections"],
+  idToName: Map<number, string>,
+  featuredIds: Set<number>,
+): string {
+  const ids: number[] = [];
+  for (const c of connections) {
+    if (idToName.has(c.from_product_id) && !ids.includes(c.from_product_id)) ids.push(c.from_product_id);
+    if (idToName.has(c.to_product_id) && !ids.includes(c.to_product_id)) ids.push(c.to_product_id);
+  }
+  if (ids.length < 2) return "";
+  const W = 760, H = 420, cx = W / 2, cy = H / 2, r = Math.min(W, H) * 0.34;
+  const pos = new Map<number, { x: number; y: number }>();
+  ids.forEach((id, i) => {
+    const a = (i / ids.length) * Math.PI * 2 - Math.PI / 2;
+    pos.set(id, { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+  });
+  const edges = connections
+    .filter((c) => pos.has(c.from_product_id) && pos.has(c.to_product_id))
+    .map((c) => {
+      const a = pos.get(c.from_product_id)!, b = pos.get(c.to_product_id)!;
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="${ACCENT}" stroke-opacity="0.4" stroke-width="1.4"/>
+        <text x="${mx.toFixed(1)}" y="${(my - 5).toFixed(1)}" text-anchor="middle" font-size="10" fill="${ACCENT}" opacity="0.85">${esc(c.relationship)}</text>`;
+    }).join("");
+  const nodes = ids.map((id) => {
+    const p = pos.get(id)!;
+    const feat = featuredIds.has(id);
+    const name = idToName.get(id) || `#${id}`;
+    const short = name.length > 18 ? name.slice(0, 17) + "…" : name;
+    return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${feat ? 12 : 9}" fill="${feat ? ACCENT : "#1c1c1c"}" stroke="${ACCENT}" stroke-width="${feat ? 2 : 1}" stroke-opacity="${feat ? 0.9 : 0.5}"/>
+      <text x="${p.x.toFixed(1)}" y="${(p.y + (feat ? 12 : 9) + 14).toFixed(1)}" text-anchor="middle" font-size="11" fill="#f5f5f5">${esc(short)}</text>`;
+  }).join("");
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;min-width:520px" xmlns="http://www.w3.org/2000/svg">${edges}${nodes}</svg></div>`;
+}
+
 export function buildPortfolioHTML(
   org: OrgPKB,
   profile: CreatorProfile,
@@ -164,9 +201,12 @@ export function buildPortfolioHTML(
       }).join("")}
     </div></div></section>` : "";
 
+  const idToName = new Map(projects.map((x) => [x.product.id, x.product.name]));
+  const connectionsSVG = buildConnectionsSVG(profile.connections, idToName, featuredIds);
   const connectionsHTML = profile.connections.length ? `<section id="connections"><div class="wrap">
     <div class="section-label">How the work connects</div>
     <h2>The through-line</h2>
+    ${connectionsSVG ? `<div style="margin-top:24px">${connectionsSVG}</div>` : ""}
     <div style="margin-top:28px">
       ${profile.connections.map((c) => {
         const a = byId.get(c.from_product_id)?.product.name ?? `#${c.from_product_id}`;
