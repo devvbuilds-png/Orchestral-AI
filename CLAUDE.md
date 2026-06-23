@@ -15,7 +15,27 @@ Deploy to Railway + rate limiting
 
 ## Project Overview
 
-**Orchestral-AI** is an AI-powered product knowledge platform (PKB/PKC system). An Organisation is the top-level container (the "Central Intelligence") — it holds a shared org PKB inherited by all products inside it. Each product has its own PKB, personas, documents, and inbox. Chat sessions are personal per user but draw from both the shared org PKB and the product PKB.
+**Kaizen (Orchestral-AI)** is an AI-powered context-management platform with **two workspace kinds**, chosen on the landing page:
+
+1. **Organisation** (original) — a shared "Central Intelligence" for a team. Holds a shared org PKB inherited by all products. Each product has its own PKB, personas, documents, and inbox.
+2. **Vibe Coder / Creator** (new) — a personal context layer for an individual builder. Connect GitHub + upload resume/sites; Kaizen ingests every repo as a *project*, synthesizes a unified **creator profile** (who they are, what & how they build, skill groups, inter-project connections), and auto-generates a **shareable portfolio** with a landing page per project.
+
+Both kinds reuse the same ingestion → extractor → PKC → synthesizer → PKB pipeline. A creator workspace is an `organisations` row with `kind='creator'`; its projects are `products` rows with `source='github'`.
+
+> **⚠️ Schema migration required:** new nullable columns were added to `organisations` (`kind`, `github_username`, `headline`, `avatar_url`) and `products` (`source`, `repo_url`, `homepage_url`, `primary_language`, `stars`, `topics`). Run `npm run db:push` before starting the server, or `GET /api/organisations` will error.
+
+### Vibe Coder mode — key files
+- `server/services/github-service.ts` — GitHub REST client (repos, README, languages, ranking). Optional `GITHUB_TOKEN`.
+- `server/agents/creator-synthesizer.ts` — cross-project profile synthesis → `OrgPKB.creator_profile`.
+- `server/services/portfolio-generator.ts` — deterministic, escaped, self-contained HTML for the portfolio + project pages.
+- `server/creator-routes.ts` — `POST /api/creators`, `POST /api/organisations/:orgId/github/import` (SSE, reusable for orgs), `POST .../synthesize-profile`, `GET .../profile`, and **public** `GET /portfolio/:orgId` + `/portfolio/:orgId/p/:productId`.
+- Frontend: `Welcome.tsx` (two-option chooser), `CreatorSetup.tsx`, `creator-dashboard.tsx`, `github-import-modal.tsx`. `App.tsx` routes by `organisation.kind`.
+
+### Security/integrity fixes applied (see AUDIT_FINDINGS.md)
+- `requireProductAccess` / `requireOrgAccess` middleware in `server/authz.ts` gate all `:productId`/`:orgId` routes (S1).
+- `modifyPKB` uses `loadPKBStrict` — never reinitializes a PKB on a transient load error (C1).
+- Conversation history loads the most recent 20 messages (S2). `SESSION_SECRET` required in prod (S3).
+- Gap engine: code-enforced filtering of populated/declined fields, conflict gaps preserved, array fields merge instead of false-conflicting (A1–A6). `lifecycle_status` now written; review inbox populated; sensitive facts flagged + withheld from Explainer (C4/S4/S5). SSRF guard on URL fetch (S6).
 
 ---
 

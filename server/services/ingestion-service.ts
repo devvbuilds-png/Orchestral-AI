@@ -1,9 +1,59 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import dns from "dns/promises";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { supabase, UPLOADS_BUCKET } from "../supabase-storage";
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SSRF guard (audit S6) — block fetches to private/loopback/link-local targets.
+// ──────────────────────────────────────────────────────────────────────────────
+
+function isPrivateIp(ip: string): boolean {
+  // IPv6 loopback / unique-local / link-local
+  if (ip === "::1" || ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe80")) return true;
+  // IPv4-mapped IPv6 → strip prefix
+  const v4 = ip.startsWith("::ffff:") ? ip.slice(7) : ip;
+  const m = v4.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) return false;
+  const [a, b] = [parseInt(m[1]), parseInt(m[2])];
+  if (a === 10) return true;                         // 10.0.0.0/8
+  if (a === 127) return true;                        // loopback
+  if (a === 0) return true;                          // 0.0.0.0/8
+  if (a === 169 && b === 254) return true;           // link-local / cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true;  // 172.16.0.0/12
+  if (a === 192 && b === 168) return true;           // 192.168.0.0/16
+  if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT
+  return false;
+}
+
+/** Throws if the URL is non-http(s) or resolves to a private/internal address. */
+export async function assertPublicUrl(rawUrl: string): Promise<void> {
+  let parsed: URL;
+  try { parsed = new URL(rawUrl); } catch { throw new Error("Invalid URL"); }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Only http(s) URLs are allowed");
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) {
+    throw new Error("Refusing to fetch internal host");
+  }
+  // Literal IP in the host
+  if (/^[\d.]+$/.test(host) || host.includes(":")) {
+    if (isPrivateIp(host)) throw new Error("Refusing to fetch private address");
+  }
+  // Resolve DNS and verify every returned address is public
+  try {
+    const records = await dns.lookup(host, { all: true });
+    for (const r of records) {
+      if (isPrivateIp(r.address)) throw new Error("Refusing to fetch host resolving to a private address");
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("Refusing")) throw err;
+    throw new Error("Could not resolve host");
+  }
+}
 
 export async function extractTextFromFile(filePath: string): Promise<string> {
   const ext = path.extname(filePath).toLowerCase();
@@ -20,9 +70,17 @@ export async function extractTextFromFile(filePath: string): Promise<string> {
       case ".docx":
       case ".doc":
         return await extractFromDOCX(filePath);
-      
-      default:
+
+      case ".csv":
+      case ".json":
+      case ".html":
+      case ".htm":
+      case ".rtf":
         return fs.readFileSync(filePath, "utf-8");
+
+      default:
+        // Audit S7: don't read arbitrary/binary files as UTF-8 — reject cleanly.
+        throw new Error(`Unsupported file type: ${ext || "(no extension)"}. Supported: PDF, DOCX, TXT, MD.`);
     }
   } catch (error) {
     console.error(`Failed to extract text from ${filePath}:`, error);
@@ -69,6 +127,7 @@ async function extractFromDOCX(filePath: string): Promise<string> {
 
 export async function fetchUrlContent(url: string): Promise<{ text: string; title?: string }> {
   try {
+    await assertPublicUrl(url);
     const response = await axios.get(url, {
       timeout: 30000,
       headers: {
@@ -227,6 +286,9 @@ export async function crawlWebsite(
     
     if (visited.has(url)) continue;
     visited.add(url);
+
+    // SSRF guard (S6) — skip any link that resolves internally
+    try { await assertPublicUrl(url); } catch { errors.push(`Skipped non-public URL: ${url}`); continue; }
 
     if (onProgress) {
       onProgress({

@@ -6,9 +6,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { MinimalModeProvider } from "@/contexts/MinimalModeContext";
 import { AnimatePresence } from "framer-motion";
-import Welcome from "@/pages/Welcome";
+import Welcome, { type WorkspaceKind } from "@/pages/Welcome";
 import OrgSetup from "@/pages/OrgSetup";
+import CreatorSetup from "@/pages/CreatorSetup";
 import Dashboard from "@/pages/dashboard";
+import CreatorDashboard from "@/pages/creator-dashboard";
 import ProductWorkspace from "@/pages/product-workspace";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
@@ -36,7 +38,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-type OnboardingStep = "welcome" | "setup";
+type OnboardingStep = "welcome" | "setup-org" | "setup-creator";
 
 interface AuthUser {
   id: string;
@@ -107,20 +109,26 @@ function AppContent() {
       <>
         <AnimatePresence mode="wait">
           {step === "welcome" && (
-            <Welcome key="welcome" onGetStarted={() => setStep("setup")} />
+            <Welcome key="welcome" onChoose={(kind: WorkspaceKind) => setStep(kind === "creator" ? "setup-creator" : "setup-org")} />
           )}
-          {step === "setup" && (
-            <OrgSetup key="setup" onComplete={() => setStep(null)} />
+          {step === "setup-org" && (
+            <OrgSetup key="setup-org" onComplete={() => setStep(null)} />
+          )}
+          {step === "setup-creator" && (
+            <CreatorSetup key="setup-creator" onComplete={() => setStep(null)} onBack={() => setStep("welcome")} />
           )}
         </AnimatePresence>
       </>
     );
   }
 
-  // Main app router
+  // Vibe-coder workspaces get a portfolio-centric dashboard; orgs keep the
+  // existing Central Intelligence dashboard. Product workspace is shared.
+  const isCreator = (data?.organisation as any)?.kind === "creator";
+
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
+      <Route path="/" component={isCreator ? CreatorDashboard : Dashboard} />
       <Route path="/products/:productId" component={ProductWorkspace} />
       <Route component={NotFound} />
     </Switch>

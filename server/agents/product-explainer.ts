@@ -377,9 +377,15 @@ function formatLabel(key: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** A FactField marked sensitive but not yet approved must not be surfaced (S5). */
+function isWithheld(field: any): boolean {
+  return !!field && typeof field === "object" && field.sensitive === true && field.approved !== true;
+}
+
 /** Extract the display value from a FactField, primitive, or nested object */
 function extractValue(field: any): string | null {
   if (field === null || field === undefined) return null;
+  if (isWithheld(field)) return null;
   if (typeof field === "string") return field.length > 0 ? field : null;
   if (typeof field === "number" || typeof field === "boolean") return String(field);
   if (Array.isArray(field)) {

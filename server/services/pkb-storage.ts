@@ -18,15 +18,24 @@ export async function withPKBLock<T>(productId: string, fn: () => Promise<T>): P
   const existing = locks.get(productId);
   let release: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  locks.set(productId, existing ? existing.then(() => gate) : gate);
+  // The promise we store as the chain tail (what the NEXT caller awaits).
+  const tail = existing ? existing.then(() => gate) : gate;
+  locks.set(productId, tail);
   if (existing) await existing;
   try {
     return await fn();
   } finally {
     release!();
-    // Clean up only if we're still the tail of the chain
-    if (locks.get(productId) === gate) locks.delete(productId);
+    // Clean up only if we're still the tail of the chain. Compare against the
+    // stored tail (not `gate`) — for chained callers the map holds `tail`, so
+    // comparing against `gate` would never match and leak the entry.
+    if (locks.get(productId) === tail) locks.delete(productId);
   }
+}
+
+// Generic key-scoped lock (used for org PKB writes, keyed by `org_{id}`).
+export async function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  return withPKBLock(key, fn);
 }
 
 /** Remove the in-memory mutex entry for a deleted product. */
@@ -44,7 +53,11 @@ export async function modifyPKB(
   mutator: (pkb: PKB) => void | Promise<void>,
 ): Promise<PKB> {
   return withPKBLock(productId, async () => {
-    let pkb = await loadPKB(productId);
+    // Use the strict loader: it returns null ONLY for a genuine 404 (object
+    // not found) and THROWS on any transient error. This prevents a flaky
+    // read from being treated as "no PKB" and silently overwriting a
+    // populated PKB with a freshly-initialised empty one (audit C1).
+    let pkb = await loadPKBStrict(productId);
     if (!pkb) pkb = await initializePKB(productId, "b2b");
     await mutator(pkb);
     await savePKB(productId, pkb);
@@ -149,16 +162,25 @@ export async function initializePKB(
   return pkb;
 }
 
+/**
+ * Strict loader — returns null ONLY when the PKB genuinely does not exist
+ * (downloadJSON returns null for 404). Any other error (network/Supabase)
+ * propagates so callers don't mistake a transient failure for "no data".
+ */
+export async function loadPKBStrict(productId: string): Promise<PKB | null> {
+  const pkb = await downloadJSON<PKB>(`product_${productId}/pkb.json`);
+  if (!pkb) return null;
+  // V0 migration: rename session_id → product_id
+  if ((pkb.meta as any).session_id && !pkb.meta.product_id) {
+    pkb.meta.product_id = (pkb.meta as any).session_id;
+    delete (pkb.meta as any).session_id;
+  }
+  return pkb;
+}
+
 export async function loadPKB(productId: string): Promise<PKB | null> {
   try {
-    const pkb = await downloadJSON<PKB>(`product_${productId}/pkb.json`);
-    if (!pkb) return null;
-    // V0 migration: rename session_id → product_id
-    if ((pkb.meta as any).session_id && !pkb.meta.product_id) {
-      pkb.meta.product_id = (pkb.meta as any).session_id;
-      delete (pkb.meta as any).session_id;
-    }
-    return pkb;
+    return await loadPKBStrict(productId);
   } catch (error) {
     console.error(`Failed to load PKB for product ${productId}:`, error);
     return null;
@@ -326,17 +348,21 @@ export async function saveOrgPKB(orgId: number, pkb: OrgPKB): Promise<void> {
 }
 
 export async function updateOrgPKBFields(orgId: number, fields: Partial<OrgPKB>): Promise<OrgPKB> {
-  const pkb = await loadOrgPKB(orgId);
-  const updated: OrgPKB = { ...pkb, ...fields };
-  await saveOrgPKB(orgId, updated);
-  return updated;
+  return withKeyLock(`org_${orgId}`, async () => {
+    const pkb = await loadOrgPKB(orgId);
+    const updated: OrgPKB = { ...pkb, ...fields };
+    await saveOrgPKB(orgId, updated);
+    return updated;
+  });
 }
 
 export async function addOrgConflict(orgId: number, conflict: OrgConflict): Promise<void> {
-  const pkb = await loadOrgPKB(orgId);
-  if (!pkb.conflicts) pkb.conflicts = [];
-  pkb.conflicts.push(conflict);
-  await saveOrgPKB(orgId, pkb);
+  await withKeyLock(`org_${orgId}`, async () => {
+    const pkb = await loadOrgPKB(orgId);
+    if (!pkb.conflicts) pkb.conflicts = [];
+    pkb.conflicts.push(conflict);
+    await saveOrgPKB(orgId, pkb);
+  });
 }
 
 export async function resolveOrgConflict(
@@ -345,27 +371,29 @@ export async function resolveOrgConflict(
   resolution: "resolved" | "dismissed",
   updatedValue?: string
 ): Promise<OrgConflict | null> {
-  const pkb = await loadOrgPKB(orgId);
-  if (!pkb.conflicts) return null;
+  return withKeyLock(`org_${orgId}`, async () => {
+    const pkb = await loadOrgPKB(orgId);
+    if (!pkb.conflicts) return null;
 
-  const conflict = pkb.conflicts.find((c) => c.id === conflictId);
-  if (!conflict) return null;
+    const conflict = pkb.conflicts.find((c) => c.id === conflictId);
+    if (!conflict) return null;
 
-  conflict.status = resolution;
-  conflict.resolved_at = new Date().toISOString();
+    conflict.status = resolution;
+    conflict.resolved_at = new Date().toISOString();
 
-  if (resolution === "resolved" && updatedValue !== undefined) {
-    const currentValue = (pkb as any)[conflict.field];
-    if (Array.isArray(currentValue)) {
-      (pkb as any)[conflict.field] = updatedValue
-        .split(",")
-        .map((s: string) => s.trim())
-        .filter(Boolean);
-    } else {
-      (pkb as any)[conflict.field] = updatedValue;
+    if (resolution === "resolved" && updatedValue !== undefined) {
+      const currentValue = (pkb as any)[conflict.field];
+      if (Array.isArray(currentValue)) {
+        (pkb as any)[conflict.field] = updatedValue
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean);
+      } else {
+        (pkb as any)[conflict.field] = updatedValue;
+      }
     }
-  }
 
-  await saveOrgPKB(orgId, pkb);
-  return conflict;
+    await saveOrgPKB(orgId, pkb);
+    return conflict;
+  });
 }

@@ -31,6 +31,14 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// ── Session secret — must be set in production (audit S3) ────────────────────
+// A hardcoded fallback secret means anyone can forge session cookies. Fail fast
+// in production rather than silently shipping a forgeable session.
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET must be set in production — refusing to start with a default secret.");
+}
+const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
+
 // ── Session store (Postgres) ─────────────────────────────────────────────────
 const PgStore = connectPgSimple(session);
 const pgPool = new Pool({
@@ -45,7 +53,7 @@ app.use(
       pool: pgPool,
       createTableIfMissing: true,
     }),
-    secret: process.env.SESSION_SECRET || "dev-secret-change-in-production",
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -120,8 +128,11 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      // Audit S8: do not dump full response bodies (they contain PKB content,
+      // emails, etc.). Only surface error payloads, and cap their length.
+      if (capturedJsonResponse && res.statusCode >= 400) {
+        const body = JSON.stringify(capturedJsonResponse);
+        logLine += ` :: ${body.length > 200 ? body.slice(0, 200) + "…" : body}`;
       }
 
       log(logLine);
