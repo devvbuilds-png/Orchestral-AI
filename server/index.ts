@@ -203,7 +203,9 @@ app.use((req, res, next) => {
     {
       port,
       host: "0.0.0.0",
-      reusePort: true,
+      // reusePort is Linux-only; on macOS/Windows it throws ENOTSUP and breaks
+      // local `npm run dev`. Enable it only where it's supported.
+      reusePort: process.platform === "linux",
     },
     () => {
       log(`serving on port ${port}`);

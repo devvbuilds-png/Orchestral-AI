@@ -3,6 +3,7 @@ import { Github, Loader2, X, ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 interface Props {
   open: boolean;
@@ -19,6 +20,7 @@ interface Props {
  */
 const GithubImportModal = ({ open, onClose, orgId, context = "organisation" }: Props) => {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,10 +40,18 @@ const GithubImportModal = ({ open, onClose, orgId, context = "organisation" }: P
         body: JSON.stringify({ username: username.trim(), token: token.trim() || undefined }),
         credentials: "include",
       });
-      if (!res.ok || !res.body) { setMsg("Could not start import."); setBusy(false); return; }
+      if (!res.ok || !res.body) {
+        const j = await res.json().catch(() => ({}));
+        const err = j.error || "Could not start import.";
+        setMsg(err); setBusy(false);
+        toast({ title: "GitHub import failed", description: err, variant: "destructive" });
+        return;
+      }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let fatal: string | null = null;
+      let importedCount = 0;
       while (true) {
         const { done: rdone, value } = await reader.read();
         if (rdone) break;
@@ -54,14 +64,22 @@ const GithubImportModal = ({ open, onClose, orgId, context = "organisation" }: P
             const evt = JSON.parse(line.slice(6));
             if (evt.type === "status") setMsg(evt.message);
             if (evt.type === "progress") { setProgress({ current: evt.current, total: evt.total }); setMsg(`Importing ${evt.repo}…`); }
-            if (evt.type === "done") { setMsg(`Imported ${evt.imported} project${evt.imported === 1 ? "" : "s"}.`); setDone(true); }
+            if (evt.type === "fatal") fatal = evt.error;
+            if (evt.type === "done") { importedCount = evt.imported; setMsg(`Imported ${evt.imported} project${evt.imported === 1 ? "" : "s"}.`); setDone(true); }
           } catch { /* skip */ }
         }
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/organisations/${orgId}/profile`] });
+      if (fatal) {
+        setMsg(fatal);
+        toast({ title: "GitHub import failed", description: fatal, variant: "destructive" });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+        queryClient.invalidateQueries({ queryKey: [`/api/organisations/${orgId}/profile`] });
+        toast({ title: "Repositories imported", description: `Added ${importedCount} project${importedCount === 1 ? "" : "s"}.` });
+      }
     } catch {
       setMsg("Import failed.");
+      toast({ title: "GitHub import failed", description: "The import failed unexpectedly.", variant: "destructive" });
     } finally {
       setBusy(false);
       setProgress(null);

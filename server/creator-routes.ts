@@ -102,7 +102,16 @@ export function registerCreatorRoutes(app: Express): void {
     try {
       send(res, { type: "status", message: `Connecting to GitHub @${username}…` });
 
-      const ghUser = await getUser(username, token).catch(() => null);
+      // Validate the user up-front so we can surface a clear, specific message
+      // (e.g. "user not found" / "rate limit") instead of a generic failure.
+      let ghUser: Awaited<ReturnType<typeof getUser>> | null = null;
+      try {
+        ghUser = await getUser(username, token);
+      } catch (e: any) {
+        send(res, { type: "fatal", error: e?.message || `Couldn't reach GitHub user @${username}` });
+        res.end();
+        return;
+      }
       if (ghUser) {
         await updateOrgPKBFields(orgId, {
           github_username: ghUser.login,
@@ -185,8 +194,13 @@ export function registerCreatorRoutes(app: Express): void {
         }
       })));
 
-      send(res, { type: "status", message: "Building your profile…" });
-      const profile = await runCreatorSynthesizer(orgId);
+      // Only creator workspaces get a synthesized portfolio profile; for plain
+      // organisations the imported repos are just products (no profile needed).
+      let profile = null;
+      if (orgPKB.kind === "creator") {
+        send(res, { type: "status", message: "Building your profile…" });
+        profile = await runCreatorSynthesizer(orgId);
+      }
 
       send(res, { type: "done", imported, total_repos: allRepos.length, has_profile: !!profile });
       res.end();

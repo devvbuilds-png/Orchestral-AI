@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { useMinimalMode } from "@/contexts/MinimalModeContext";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft } from "lucide-react";
 import type { Organisation } from "@shared/schema";
 
 interface OrgSetupProps {
@@ -14,6 +16,7 @@ interface OrgSetupProps {
   mode?: "create" | "edit";
   initialOrganisation?: Organisation | null;
   onCancel?: () => void;
+  onBack?: () => void;
 }
 
 const locations = ["India", "Southeast Asia", "Europe", "North America", "Latin America", "Middle East", "Africa", "Global"];
@@ -24,11 +27,14 @@ const OrgSetup = ({
   mode = "create",
   initialOrganisation = null,
   onCancel,
+  onBack,
 }: OrgSetupProps) => {
   const { minimal } = useMinimalMode();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isEditMode = mode === "edit";
+  const [extracting, setExtracting] = useState(false);
 
   const [orgName, setOrgName] = useState("");
   const [description, setDescription] = useState("");
@@ -102,13 +108,35 @@ const OrgSetup = ({
     saveOrgMutation.mutate();
   };
 
-  const uploadExtractMutation = useMutation({
-    mutationFn: async (file: File) => {
-      // We need an orgId — but org doesn't exist yet. Extract after creation.
-      // For now, just store the file and do the extraction after org creation.
-      // This is a UI affordance; we skip extraction pre-creation.
-    },
-  });
+  // Auto-fill from a company deck — only available in edit mode (needs an org id).
+  const extractFromDeck = async (file: File) => {
+    if (!initialOrganisation?.id) return;
+    setExtracting(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/organisations/${initialOrganisation.id}/extract`, {
+        method: "POST", body: form, credentials: "include",
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { toast({ title: "Couldn't read that file", description: j.error || "Try a PDF or DOCX.", variant: "destructive" }); return; }
+      const f = j.extracted || {};
+      if (f.name) setOrgName(f.name);
+      if (f.description) setDescription(f.description);
+      if (f.industry) setIndustry(f.industry);
+      if (f.founded_year) setFounded(String(f.founded_year));
+      if (f.num_products) setNumProducts(String(f.num_products));
+      if (Array.isArray(f.locations) && f.locations.length) setSelectedLocations(f.locations);
+      if (Array.isArray(f.competitors) && f.competitors.length) setCompetitors(f.competitors);
+      if (f.business_model) setBusinessModel(String(f.business_model).toUpperCase());
+      if (f.website_url) setWebsiteUrl(f.website_url);
+      toast({ title: "Fields auto-filled", description: `Pulled ${Object.keys(f).length} field(s) from your deck. Review and save.` });
+    } catch {
+      toast({ title: "Extraction failed", description: "Something went wrong reading that file.", variant: "destructive" });
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   return (
     <motion.div
@@ -119,11 +147,15 @@ const OrgSetup = ({
       className="fixed inset-0 z-50 flex flex-col items-center outer-frame overflow-auto"
     >
       <div className="relative z-10 w-full max-w-2xl mx-auto px-6 py-16">
+        {!isEditMode && onBack && (
+          <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6">
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+        )}
         {!isEditMode && (
           <div className="flex justify-center gap-2 mb-8">
             <div className="h-1 w-16 rounded-full bg-primary" />
             <div className="h-1 w-16 rounded-full bg-primary" />
-            <div className="h-1 w-16 rounded-full bg-muted" />
           </div>
         )}
 
@@ -135,7 +167,7 @@ const OrgSetup = ({
           className="flex justify-center mb-6"
         >
           <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-            {isEditMode ? "Organisation settings" : "Step 2 of 3 — Workspace setup"}
+            {isEditMode ? "Organisation settings" : "Step 2 of 2 — Workspace setup"}
           </span>
         </motion.div>
 
@@ -189,19 +221,24 @@ const OrgSetup = ({
           onSubmit={handleSubmit}
           className="space-y-6"
         >
-          {/* Upload card */}
-          <div className="surface-card rounded-xl p-5">
-            <h4 className="font-heading text-sm font-bold text-foreground mb-1">
-              Upload a company deck to auto-fill this form
-            </h4>
-            <p className="font-body text-xs text-muted-foreground mb-4 leading-relaxed">
-              Only organisation-level fields will be extracted — everything else is ignored. Fields not found will be left blank for you to fill manually.
-            </p>
-            <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt,.md" className="hidden" onChange={() => {}} />
-            <Button type="button" variant="outline" className="rounded-xl text-xs" onClick={() => fileInputRef.current?.click()}>
-              Browse file
-            </Button>
-          </div>
+          {/* Upload card — auto-fill from a deck. Needs an org id, so it's only
+              wired in edit mode; pre-creation we keep manual entry to avoid a
+              button that silently does nothing. */}
+          {isEditMode && (
+            <div className="surface-card rounded-xl p-5">
+              <h4 className="font-heading text-sm font-bold text-foreground mb-1">
+                Upload a company deck to auto-fill this form
+              </h4>
+              <p className="font-body text-xs text-muted-foreground mb-4 leading-relaxed">
+                Only organisation-level fields will be extracted — everything else is ignored. Fields not found are left for you to fill manually.
+              </p>
+              <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt,.md" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) extractFromDeck(f); e.target.value = ""; }} />
+              <Button type="button" variant="outline" className="rounded-xl text-xs" disabled={extracting} onClick={() => fileInputRef.current?.click()}>
+                {extracting ? "Reading…" : "Browse file"}
+              </Button>
+            </div>
+          )}
 
           {/* Org Name */}
           <div>

@@ -112,7 +112,7 @@ function AppContent() {
             <Welcome key="welcome" onChoose={(kind: WorkspaceKind) => setStep(kind === "creator" ? "setup-creator" : "setup-org")} />
           )}
           {step === "setup-org" && (
-            <OrgSetup key="setup-org" onComplete={() => setStep(null)} />
+            <OrgSetup key="setup-org" onComplete={() => setStep(null)} onBack={() => setStep("welcome")} />
           )}
           {step === "setup-creator" && (
             <CreatorSetup key="setup-creator" onComplete={() => setStep(null)} onBack={() => setStep("welcome")} />

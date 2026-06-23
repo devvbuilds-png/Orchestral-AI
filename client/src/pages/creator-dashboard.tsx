@@ -1,6 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import {
   Github, ExternalLink, RefreshCw, Sparkles, Star, ArrowUpRight, Layers,
   LogOut, Loader2, Network, Code2, FileText, Link2, Trash2, FileUp,
@@ -25,6 +26,8 @@ interface ProfileResponse {
 const CreatorDashboard = () => {
   const { minimal } = useMinimalMode();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const autoImportTried = useRef(false);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
@@ -70,13 +73,28 @@ const CreatorDashboard = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/products"] });
   };
 
-  const runImport = async () => {
+  // Seamless onboarding: if the creator gave a GitHub username at setup and has
+  // no projects yet, kick off the import automatically (once) so they don't land
+  // on an empty screen wondering what to do next.
+  useEffect(() => {
+    if (autoImportTried.current) return;
+    if (!orgId || !data) return;
+    if (data.github_username && data.projects.length === 0 && !data.profile && !importing) {
+      autoImportTried.current = true;
+      runImport(data.github_username);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, data]);
+
+  const runImport = async (usernameArg?: string) => {
     if (!orgId) return;
-    const username = (ghInput || data?.github_username || "").trim();
+    const username = (usernameArg ?? ghInput ?? data?.github_username ?? "").trim();
     if (!username) { setImportMsg("Enter a GitHub username first."); return; }
     setImporting(true);
     setImportProgress(null);
-    setImportMsg("Connecting to GitHub…");
+    setImportMsg(`Connecting to GitHub @${username}…`);
+    let fatal: string | null = null;
+    let importedCount: number | null = null;
     try {
       const res = await fetch(`/api/organisations/${orgId}/github/import`, {
         method: "POST",
@@ -84,33 +102,47 @@ const CreatorDashboard = () => {
         body: JSON.stringify({ username, token: tokenInput.trim() || undefined }),
         credentials: "include",
       });
-      if (!res.ok || !res.body) { setImportMsg("Import failed to start."); setImporting(false); return; }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const evt = JSON.parse(line.slice(6));
-            if (evt.type === "status") setImportMsg(evt.message);
-            if (evt.type === "progress") { setImportProgress({ current: evt.current, total: evt.total }); setImportMsg(`Importing ${evt.repo}…`); }
-            if (evt.type === "done") setImportMsg(`Imported ${evt.imported} projects.`);
-          } catch { /* skip */ }
+      if (!res.ok || !res.body) {
+        const j = await res.json().catch(() => ({}));
+        fatal = j.error || "Couldn't start the import.";
+      } else {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const evt = JSON.parse(line.slice(6));
+              if (evt.type === "status") setImportMsg(evt.message);
+              if (evt.type === "progress") { setImportProgress({ current: evt.current, total: evt.total }); setImportMsg(`Importing ${evt.repo}…`); }
+              if (evt.type === "fatal") fatal = evt.error;
+              if (evt.type === "done") importedCount = evt.imported;
+            } catch { /* skip */ }
+          }
         }
       }
-      refreshProfile();
-      setShowConnect(false);
     } catch {
-      setImportMsg("Import failed.");
+      fatal = "The import failed unexpectedly.";
     } finally {
       setImporting(false);
       setImportProgress(null);
+    }
+
+    if (fatal) {
+      setImportMsg(fatal);
+      toast({ title: "GitHub import failed", description: fatal, variant: "destructive" });
+    } else {
+      refreshProfile();
+      setShowConnect(false);
+      const n = importedCount ?? 0;
+      setImportMsg(n > 0 ? `Imported ${n} project${n === 1 ? "" : "s"}.` : "Nothing new to import.");
+      toast({ title: n > 0 ? "Portfolio updated" : "All caught up", description: n > 0 ? `Imported ${n} project${n === 1 ? "" : "s"} and built your profile.` : "No new repositories to import." });
     }
   };
 
@@ -122,8 +154,9 @@ const CreatorDashboard = () => {
       form.append("file", file);
       const res = await fetch(`/api/organisations/${orgId}/sources/upload`, { method: "POST", body: form, credentials: "include" });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) { setSrcMsg(j.error || "Could not add that file."); return; }
+      if (!res.ok) { setSrcMsg(j.error || "Could not add that file."); toast({ title: "Couldn't add file", description: j.error || "Try a PDF, DOCX, TXT or MD.", variant: "destructive" }); return; }
       setSrcMsg(`Added ${file.name}. Regenerate your profile to use it.`);
+      toast({ title: "Source added", description: `${file.name} — hit Generate profile to fold it in.` });
       refreshProfile();
     } catch { setSrcMsg("Upload failed."); }
     finally { setSrcBusy(false); }
@@ -138,8 +171,9 @@ const CreatorDashboard = () => {
         body: JSON.stringify({ url: srcUrl.trim() }), credentials: "include",
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) { setSrcMsg(j.error || "Could not fetch that URL."); return; }
+      if (!res.ok) { setSrcMsg(j.error || "Could not fetch that URL."); toast({ title: "Couldn't fetch site", description: j.error || "Check the URL and try again.", variant: "destructive" }); return; }
       setSrcUrl(""); setSrcMsg("Added. Regenerate your profile to use it.");
+      toast({ title: "Site added", description: "Hit Generate profile to fold it in." });
       refreshProfile();
     } catch { setSrcMsg("Fetch failed."); }
     finally { setSrcBusy(false); }
@@ -155,8 +189,14 @@ const CreatorDashboard = () => {
     if (!orgId) return;
     setSynthing(true);
     try {
-      await fetch(`/api/organisations/${orgId}/synthesize-profile`, { method: "POST", credentials: "include" });
-      refreshProfile();
+      const res = await fetch(`/api/organisations/${orgId}/synthesize-profile`, { method: "POST", credentials: "include" });
+      if (res.ok) {
+        refreshProfile();
+        toast({ title: "Profile regenerated", description: "Your bio, skills and connections were refreshed." });
+      } else {
+        const j = await res.json().catch(() => ({}));
+        toast({ title: "Couldn't regenerate", description: j.error || "Add some projects or sources first.", variant: "destructive" });
+      }
     } finally {
       setSynthing(false);
     }
@@ -215,9 +255,12 @@ const CreatorDashboard = () => {
               )}
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setShowConnect((v) => !v)} className="gap-2 rounded-xl flex-1"><Github className="h-4 w-4" /> Import</Button>
-                {projects.length > 0 && (
-                  <Button variant="outline" onClick={regenerate} disabled={synthing} className="gap-2 rounded-xl">
+                {(projects.length > 0 || (data?.sources?.length ?? 0) > 0) && (
+                  <Button variant="outline" onClick={regenerate} disabled={synthing} className="gap-2 rounded-xl"
+                    aria-label={profile ? "Regenerate profile" : "Generate profile"}
+                    title="Build your profile from your latest projects & sources">
                     {synthing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {!profile && <span>Generate profile</span>}
                   </Button>
                 )}
               </div>
@@ -234,15 +277,22 @@ const CreatorDashboard = () => {
               <div className="flex gap-2 flex-wrap">
                 <Input value={ghInput} onChange={(e) => setGhInput(e.target.value)} placeholder={data?.github_username || "github username"} className="h-10 rounded-xl flex-1 min-w-[160px]" disabled={importing} />
                 <Input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} placeholder="token (optional, higher rate limit)" type="password" className="h-10 rounded-xl flex-1 min-w-[160px]" disabled={importing} />
-                <Button onClick={runImport} disabled={importing} className="gap-2 bg-primary hover:bg-primary/90 rounded-xl">
+                <Button onClick={() => runImport()} disabled={importing} className="gap-2 bg-primary hover:bg-primary/90 rounded-xl">
                   {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpRight className="h-4 w-4" />} Import repos
                 </Button>
               </div>
               {importMsg && (
-                <div className="mt-3 text-sm text-muted-foreground flex items-center gap-2">
-                  {importing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  {importMsg}
-                  {importProgress && <span className="text-xs">({importProgress.current}/{importProgress.total})</span>}
+                <div className="mt-3">
+                  <div className="text-sm text-muted-foreground flex items-center gap-2">
+                    {importing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    <span>{importMsg}</span>
+                    {importProgress && <span className="text-xs">({importProgress.current}/{importProgress.total})</span>}
+                  </div>
+                  {importProgress && importProgress.total > 0 && (
+                    <div className="mt-2 h-1.5 w-full rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full bg-primary transition-all duration-300" style={{ width: `${Math.round((importProgress.current / importProgress.total) * 100)}%` }} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -293,23 +343,20 @@ const CreatorDashboard = () => {
                 <span key={s.id} className="inline-flex items-center gap-1.5 text-xs bg-secondary/60 ring-1 ring-border/50 rounded-full pl-2.5 pr-1.5 py-1">
                   {s.type === "url" ? <Link2 className="h-3 w-3 text-muted-foreground" /> : <FileText className="h-3 w-3 text-muted-foreground" />}
                   <span className="max-w-[180px] truncate text-foreground">{s.title || s.ref}</span>
-                  <button onClick={() => deleteSource(s.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
+                  <button onClick={() => deleteSource(s.id)} aria-label={`Remove ${s.title || s.ref}`} title="Remove source" className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
                 </span>
               ))}
             </div>
           )}
         </div>
 
-        {/* Empty state */}
-        {projects.length === 0 && !importing && (
+        {/* Importing state — reassure the user while repos are processed */}
+        {projects.length === 0 && importing && (
           <div className="surface-card rounded-2xl p-10 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 ring-1 ring-primary/30 mx-auto mb-4">
-              <Github className="h-7 w-7 text-primary" />
-            </div>
-            <h3 className="font-heading text-lg font-bold text-foreground">Bring your work in</h3>
+            <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto mb-4" />
+            <h3 className="font-heading text-lg font-bold text-foreground">Reading your repositories…</h3>
             <p className="text-muted-foreground text-sm mt-2 max-w-md mx-auto">
-              Connect your GitHub above and Kaizen will read your repos, understand what you build, and
-              generate a portfolio with a landing page for every project.
+              Kaizen is understanding each project and building your profile. This can take a minute for larger accounts — hang tight.
             </p>
           </div>
         )}
