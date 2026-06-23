@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { Pool } from "pg";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -14,6 +16,30 @@ const httpServer = createServer(app);
 // Railway terminates TLS at the proxy. Trust it so secure session cookies
 // are correctly issued after OAuth redirects in production.
 app.set("trust proxy", 1);
+
+// ── Security headers + rate limiting (audit S9) ──────────────────────────────
+// CSP is disabled because the public portfolio pages use inline <style>/SVG and
+// the Vite client injects inline scripts; the other hardening headers stay on.
+app.use(helmet({ contentSecurityPolicy: false }));
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 600,                     // generous per-IP ceiling for normal API use
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many requests — slow down a moment." },
+});
+// Tighter ceiling on the expensive LLM / ingestion / import endpoints.
+const heavyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 80,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "You're doing that a lot — please wait a few minutes." },
+});
+const HEAVY_ROUTE_RE = /\/(chat|explain|process|extract|import|crawl-website|synthesize-profile|sources|recheck-gaps|fill-gaps)\b/;
+app.use("/api", apiLimiter);
+app.use("/api", (req, res, next) => (HEAVY_ROUTE_RE.test(req.path) ? heavyLimiter(req, res, next) : next()));
 
 declare module "http" {
   interface IncomingMessage {

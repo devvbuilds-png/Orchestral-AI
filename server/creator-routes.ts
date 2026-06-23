@@ -6,6 +6,7 @@ import os from "os";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
+import pLimit from "p-limit";
 
 import { db } from "./db";
 import { products, productMembers, organisations, organisationMembers } from "@shared/schema";
@@ -121,20 +122,22 @@ export function registerCreatorRoutes(app: Express): void {
       const existing = await db.select({ repo_url: products.repo_url }).from(products).where(eq(products.org_id, orgId));
       const existingUrls = new Set(existing.map((e: any) => e.repo_url).filter(Boolean));
 
-      const perRepoLangs: Record<string, number>[] = [];
       let imported = 0;
+      let processed = 0;
+      // Import repos with bounded concurrency — each repo's writes are scoped to
+      // its own product lock, so 3-at-a-time is safe and ~3x faster than serial.
+      const limit = pLimit(3);
 
-      for (let i = 0; i < ranked.length; i++) {
-        const repo = ranked[i];
-        send(res, { type: "progress", current: i + 1, total: ranked.length, repo: repo.name });
-        if (existingUrls.has(repo.html_url)) continue;
+      await Promise.all(ranked.map((repo) => limit(async () => {
+        processed++;
+        send(res, { type: "progress", current: processed, total: ranked.length, repo: repo.name });
+        if (existingUrls.has(repo.html_url)) return;
 
         try {
           const [languages, readme] = await Promise.all([
             getLanguages(repo.full_name, token),
             getReadme(repo.full_name, token),
           ]);
-          perRepoLangs.push(languages);
 
           // Create the project row
           const [product] = await db.insert(products).values({
@@ -180,7 +183,7 @@ export function registerCreatorRoutes(app: Express): void {
           console.error(`[github-import] failed for ${repo.full_name}:`, e);
           send(res, { type: "error", error: `Could not import ${repo.name}` });
         }
-      }
+      })));
 
       send(res, { type: "status", message: "Building your profile…" });
       const profile = await runCreatorSynthesizer(orgId);
