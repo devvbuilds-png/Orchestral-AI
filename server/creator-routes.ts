@@ -127,12 +127,18 @@ export function registerCreatorRoutes(app: Express): void {
       const ranked = rankRepos(allRepos).slice(0, maxRepos);
       send(res, { type: "status", message: `Found ${allRepos.length} repos — importing top ${ranked.length}…` });
 
-      // Repos already imported (skip dupes by repo_url)
-      const existing = await db.select({ repo_url: products.repo_url }).from(products).where(eq(products.org_id, orgId));
-      const existingUrls = new Set(existing.map((e: any) => e.repo_url).filter(Boolean));
+      // Map existing repo_url → product id. Existing repos are re-enriched
+      // (not skipped) so a previously-failed import can self-heal on retry.
+      const existing = await db.select({ id: products.id, repo_url: products.repo_url }).from(products).where(eq(products.org_id, orgId));
+      const existingByUrl = new Map<string, number>(
+        existing.filter((e: any) => e.repo_url).map((e: any) => [e.repo_url as string, e.id as number]),
+      );
 
       let imported = 0;
+      let enrichFailed = 0;
+      let failed = 0;
       let processed = 0;
+      let lastError = "";
       // Import repos with bounded concurrency — each repo's writes are scoped to
       // its own product lock, so 3-at-a-time is safe and ~3x faster than serial.
       const limit = pLimit(3);
@@ -140,33 +146,47 @@ export function registerCreatorRoutes(app: Express): void {
       await Promise.all(ranked.map((repo) => limit(async () => {
         processed++;
         send(res, { type: "progress", current: processed, total: ranked.length, repo: repo.name });
-        if (existingUrls.has(repo.html_url)) return;
 
+        const languages = await getLanguages(repo.full_name, token).catch(() => ({} as Record<string, number>));
+        const readme = await getReadme(repo.full_name, token).catch(() => null);
+
+        // ── Create the project row + PKB (or reuse an existing one). If create
+        //    fails, the repo is skipped with a surfaced error. ────────────────
+        let productId: number;
+        const existingId = existingByUrl.get(repo.html_url);
+        if (existingId) {
+          productId = existingId;   // re-enrich below; don't double-count as imported
+        } else {
+          try {
+            const [product] = await db.insert(products).values({
+              name: repo.name,
+              owner_id: req.user!.id,
+              org_id: orgId,
+              product_type: "b2c",
+              state: "ready",
+              source: "github",
+              repo_url: repo.html_url,
+              homepage_url: repo.homepage || null,
+              primary_language: repo.language || Object.keys(languages)[0] || null,
+              stars: repo.stargazers_count,
+              topics: repo.topics ?? [],
+            } as any).returning();
+            productId = product.id;
+            await db.insert(productMembers).values({ product_id: product.id, user_id: req.user!.id, role: "owner" });
+            await initializePKB(String(product.id), "b2c");
+            imported++;   // the project exists now — count it regardless of enrichment
+          } catch (e) {
+            failed++;
+            lastError = e instanceof Error ? e.message : String(e);
+            console.error(`[github-import] create failed for ${repo.full_name}:`, e);
+            send(res, { type: "error", error: `Could not import ${repo.name}: ${lastError}` });
+            return;
+          }
+        }
+
+        // ── Best-effort LLM enrichment. Failure here (e.g. OpenAI key) leaves a
+        //    valid metadata-only project rather than discarding it. ──────────
         try {
-          const [languages, readme] = await Promise.all([
-            getLanguages(repo.full_name, token),
-            getReadme(repo.full_name, token),
-          ]);
-
-          // Create the project row
-          const [product] = await db.insert(products).values({
-            name: repo.name,
-            owner_id: req.user!.id,
-            org_id: orgId,
-            product_type: "b2c",
-            state: "ready",
-            source: "github",
-            repo_url: repo.html_url,
-            homepage_url: repo.homepage || null,
-            primary_language: repo.language || Object.keys(languages)[0] || null,
-            stars: repo.stargazers_count,
-            topics: repo.topics ?? [],
-          } as any).returning();
-
-          await db.insert(productMembers).values({ product_id: product.id, user_id: req.user!.id, role: "owner" });
-          await initializePKB(String(product.id), "b2c");
-
-          // Build an ingestion document from repo metadata + README
           const langPct = aggregateLanguages([languages]).map((l) => `${l.language} ${l.pct}%`).join(", ");
           const doc = [
             `# ${repo.name}`,
@@ -177,20 +197,17 @@ export function registerCreatorRoutes(app: Express): void {
             `\nRepository: ${repo.html_url}`,
             readme ? `\n\n## README\n${readme}` : "",
           ].join("");
-
           const context: AgentContext = {
-            orgId, productId: String(product.id), productType: "b2c",
-            productName: repo.name,
+            orgId, productId: String(productId), productType: "b2c", productName: repo.name,
           };
           const chunks = chunkText(doc);
           const updates = await extractFromMultipleChunks(context, chunks, `github:${repo.full_name}`, "doc");
-          if (updates.length > 0) await batchApplyUpdates(String(product.id), updates, orgId);
-          await runSynthesizer(String(product.id), orgId);
-
-          imported++;
+          if (updates.length > 0) await batchApplyUpdates(String(productId), updates, orgId);
+          await runSynthesizer(String(productId), orgId);
         } catch (e) {
-          console.error(`[github-import] failed for ${repo.full_name}:`, e);
-          send(res, { type: "error", error: `Could not import ${repo.name}` });
+          enrichFailed++;
+          lastError = e instanceof Error ? e.message : String(e);
+          console.error(`[github-import] enrichment failed for ${repo.full_name}:`, e);
         }
       })));
 
@@ -202,7 +219,15 @@ export function registerCreatorRoutes(app: Express): void {
         profile = await runCreatorSynthesizer(orgId);
       }
 
-      send(res, { type: "done", imported, total_repos: allRepos.length, has_profile: !!profile });
+      send(res, {
+        type: "done",
+        imported,
+        enrich_failed: enrichFailed,
+        failed,
+        total_repos: allRepos.length,
+        has_profile: !!profile,
+        last_error: (failed > 0 || enrichFailed > 0) ? lastError : undefined,
+      });
       res.end();
     } catch (err: any) {
       console.error("GitHub import error:", err);
