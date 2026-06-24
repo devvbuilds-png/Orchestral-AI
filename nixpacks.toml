@@ -1,0 +1,15 @@
+# Railway (Nixpacks) build configuration.
+#
+# Railway sets NODE_ENV=production, which makes the default `npm ci` omit
+# devDependencies. But the build runs `tsx script/build.ts` (Vite + esbuild) —
+# all of which live in devDependencies. Force-include them for the install so
+# the build can run. The server is bundled into dist/index.cjs, so the runtime
+# start (`npm start`) needs no node_modules.
+[phases.install]
+cmds = ["npm ci --include=dev"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm start"
