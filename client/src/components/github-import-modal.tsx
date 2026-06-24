@@ -52,6 +52,9 @@ const GithubImportModal = ({ open, onClose, orgId, context = "organisation" }: P
       let buffer = "";
       let fatal: string | null = null;
       let importedCount = 0;
+      let failedCount = 0;
+      let enrichFailed = 0;
+      let lastErr = "";
       while (true) {
         const { done: rdone, value } = await reader.read();
         if (rdone) break;
@@ -64,8 +67,13 @@ const GithubImportModal = ({ open, onClose, orgId, context = "organisation" }: P
             const evt = JSON.parse(line.slice(6));
             if (evt.type === "status") setMsg(evt.message);
             if (evt.type === "progress") { setProgress({ current: evt.current, total: evt.total }); setMsg(`Importing ${evt.repo}…`); }
+            if (evt.type === "error" && evt.error) lastErr = evt.error;
             if (evt.type === "fatal") fatal = evt.error;
-            if (evt.type === "done") { importedCount = evt.imported; setMsg(`Imported ${evt.imported} project${evt.imported === 1 ? "" : "s"}.`); setDone(true); }
+            if (evt.type === "done") {
+              importedCount = evt.imported; failedCount = evt.failed ?? 0; enrichFailed = evt.enrich_failed ?? 0;
+              if (evt.last_error) lastErr = evt.last_error;
+              setMsg(`Imported ${evt.imported} project${evt.imported === 1 ? "" : "s"}.`); setDone(true);
+            }
           } catch { /* skip */ }
         }
       }
@@ -75,7 +83,17 @@ const GithubImportModal = ({ open, onClose, orgId, context = "organisation" }: P
       } else {
         queryClient.invalidateQueries({ queryKey: ["/api/products"] });
         queryClient.invalidateQueries({ queryKey: [`/api/organisations/${orgId}/profile`] });
-        toast({ title: "Repositories imported", description: `Added ${importedCount} project${importedCount === 1 ? "" : "s"}.` });
+        if (importedCount === 0 && failedCount > 0) {
+          setMsg(lastErr ? `Couldn't save any projects: ${lastErr}` : "Couldn't save any projects.");
+          toast({ title: "Import failed", description: lastErr || "No projects could be saved — check the server logs.", variant: "destructive" });
+        } else {
+          const extra = enrichFailed > 0 ? ` (${enrichFailed} imported with metadata only — AI enrichment failed${lastErr ? `: ${lastErr}` : ""})` : "";
+          toast({
+            title: importedCount > 0 ? "Repositories imported" : "Nothing new to import",
+            description: `Added ${importedCount} project${importedCount === 1 ? "" : "s"}.${extra}`,
+            variant: enrichFailed > 0 ? "destructive" : "default",
+          });
+        }
       }
     } catch {
       setMsg("Import failed.");

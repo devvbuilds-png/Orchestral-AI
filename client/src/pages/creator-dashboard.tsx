@@ -95,6 +95,9 @@ const CreatorDashboard = () => {
     setImportMsg(`Connecting to GitHub @${username}…`);
     let fatal: string | null = null;
     let importedCount: number | null = null;
+    let failedCount = 0;
+    let enrichFailed = 0;
+    let lastErr = "";
     try {
       const res = await fetch(`/api/organisations/${orgId}/github/import`, {
         method: "POST",
@@ -121,8 +124,14 @@ const CreatorDashboard = () => {
               const evt = JSON.parse(line.slice(6));
               if (evt.type === "status") setImportMsg(evt.message);
               if (evt.type === "progress") { setImportProgress({ current: evt.current, total: evt.total }); setImportMsg(`Importing ${evt.repo}…`); }
+              if (evt.type === "error" && evt.error) lastErr = evt.error;
               if (evt.type === "fatal") fatal = evt.error;
-              if (evt.type === "done") importedCount = evt.imported;
+              if (evt.type === "done") {
+                importedCount = evt.imported;
+                failedCount = evt.failed ?? 0;
+                enrichFailed = evt.enrich_failed ?? 0;
+                if (evt.last_error) lastErr = evt.last_error;
+              }
             } catch { /* skip */ }
           }
         }
@@ -141,8 +150,16 @@ const CreatorDashboard = () => {
       refreshProfile();
       setShowConnect(false);
       const n = importedCount ?? 0;
-      setImportMsg(n > 0 ? `Imported ${n} project${n === 1 ? "" : "s"}.` : "Nothing new to import.");
-      toast({ title: n > 0 ? "Portfolio updated" : "All caught up", description: n > 0 ? `Imported ${n} project${n === 1 ? "" : "s"} and built your profile.` : "No new repositories to import." });
+      if (n === 0 && failedCount > 0) {
+        setImportMsg(lastErr ? `Couldn't save any projects: ${lastErr}` : "Couldn't save any projects.");
+        toast({ title: "Import failed", description: lastErr || "No projects could be saved — check the server logs.", variant: "destructive" });
+      } else if (enrichFailed > 0) {
+        setImportMsg(`Imported ${n}, but AI enrichment failed for ${enrichFailed}.`);
+        toast({ title: "Imported with limits", description: `Added ${n} project${n === 1 ? "" : "s"}, but couldn't run AI enrichment${lastErr ? `: ${lastErr}` : ""}. Check OPENAI_API_KEY.`, variant: "destructive" });
+      } else {
+        setImportMsg(n > 0 ? `Imported ${n} project${n === 1 ? "" : "s"}.` : "Nothing new to import.");
+        toast({ title: n > 0 ? "Portfolio updated" : "All caught up", description: n > 0 ? `Imported ${n} project${n === 1 ? "" : "s"} and built your profile.` : "No new repositories to import." });
+      }
     }
   };
 
