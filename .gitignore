@@ -9,3 +9,5 @@ vite.config.ts.*
 .env
 .env.local
 .env.*.local
+# local secrets / machine-specific config
+.claude/settings.local.json
